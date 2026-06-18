@@ -178,32 +178,66 @@ export function screenOffActions() {
   return [{ kind: "ssap", uri: SSAP.turnOffScreen, payload: { standbyMode: "active" } }];
 }
 
+// ── SSDP discovery (TV 자동 발견) ────────────────────────────────────────────
+// 실TV 검증으로 확정: webOS TV 는 webOSSecondScreen ST 에 응답 안 하고 ssdp:all 에 응답한다.
+// 식별 = SERVER 헤더의 "WebOS" 또는 ST/USN 의 "lge". (원본 discoverTV 의 ssdp:all 폴백 + LG 필터)
+export const SSDP_ST_ALL = "ssdp:all";
+export const SSDP_ST_WEBOS = "urn:lge-com:service:webOSSecondScreen:1";
+
+export function buildMSearch(st, mxSeconds) {
+  return (
+    "M-SEARCH * HTTP/1.1\r\n" +
+    "HOST: 239.255.255.250:1900\r\n" +
+    'MAN: "ssdp:discover"\r\n' +
+    "MX: " + mxSeconds + "\r\n" +
+    "ST: " + st + "\r\n" +
+    "\r\n"
+  );
+}
+
+// 문자열 → UTF-8 hex(net.udp.request 의 data 인자 형식).
+export function strToHex(s) {
+  return bytesToHex(Array.from(new TextEncoder().encode(s)));
+}
+
+// SSDP 응답 패킷들에서 LG webOS TV 의 IP 추출(중복 제거). packet = {address, text}.
+export function parseLgTvAddresses(packets) {
+  const seen = new Set();
+  const out = [];
+  for (const p of packets || []) {
+    const t = p && p.text ? p.text : "";
+    if (p && p.address && /webos|urn:lge|lge:/i.test(t) && !seen.has(p.address)) {
+      seen.add(p.address);
+      out.push(p.address);
+    }
+  }
+  return out;
+}
+
 // ── Transport / TvClient ─────────────────────────────────────────────────────
 // Transport 계약(TvClient 가 의존하는 단 하나의 경계 — 실/Mock 교체점):
 //   connect(url): Promise<void> · send(text): void · onMessage(cb) · onClose(cb) · close()
-// WebSocketTransport: 브라우저 WebSocket 래퍼. MockTransport(테스트)는 테스트 파일에.
+// CoreWsTransport: 코어 app.ws(Origin 미전송) 래퍼. MockTransport(테스트)는 테스트 파일에.
+//
+// [중요] 브라우저/webview 의 WebSocket 은 Origin 헤더를 강제로 붙이고 변경할 수 없어, Origin 을
+// 검사하는 webOS TV 가 close 1008 "invalid origin" 으로 거부한다(실TV 검증). 그래서 코어가 Origin
+// 을 보내지 않는 WebSocket(tokio-tungstenite)을 대행한다 — app.ws 경유(WoL=net.udp.send 와 동일 원리).
 
-export class WebSocketTransport {
-  constructor() {
-    this.ws = null;
+export class CoreWsTransport {
+  constructor(ws) {
+    this.ws = ws; // ctx.app.ws (코어 capability)
+    this.id = null;
     this._msg = () => {};
     this._close = () => {};
+    this._subs = [];
   }
-  connect(url) {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(url);
-      this.ws = ws;
-      ws.onopen = () => resolve();
-      ws.onerror = () => {
-        reject(new Error("websocket error"));
-        this._close();
-      };
-      ws.onclose = () => this._close();
-      ws.onmessage = (e) => this._msg(String(e.data));
-    });
+  async connect(url) {
+    this.id = await this.ws.connect(url); // 연결 수립 후 resolve
+    this._subs.push(this.ws.onMessage(this.id, (t) => this._msg(t)));
+    this._subs.push(this.ws.onClose(this.id, () => this._close()));
   }
   send(text) {
-    this.ws?.send(text);
+    if (this.id != null) this.ws.send(this.id, text);
   }
   onMessage(cb) {
     this._msg = cb;
@@ -212,12 +246,21 @@ export class WebSocketTransport {
     this._close = cb;
   }
   close() {
-    try {
-      this.ws?.close();
-    } catch {
-      /* noop */
+    for (const d of this._subs.splice(0)) {
+      try {
+        d && d.dispose ? d.dispose() : typeof d === "function" && d();
+      } catch {
+        /* noop */
+      }
     }
-    this.ws = null;
+    if (this.id != null) {
+      try {
+        this.ws.close(this.id);
+      } catch {
+        /* noop */
+      }
+    }
+    this.id = null;
   }
 }
 
@@ -255,6 +298,7 @@ export class TvClient {
   }
 
   _onMessage(text) {
+    this.log("recv " + String(text).slice(0, 120));
     let m;
     try {
       m = JSON.parse(text);
@@ -323,6 +367,7 @@ export class TvClient {
         this.registerTimeoutMs,
         reject,
       );
+      this.log("register sent" + (this.clientKey ? " (key)" : " (pairing)"));
       this.control.send(JSON.stringify(buildRegisterPayload(this.clientKey || undefined, id)));
     });
   }
@@ -331,7 +376,10 @@ export class TvClient {
     this.ip = ip;
     this.useTls = !!useTls;
     this._setState("connecting");
-    await this.control.connect(useTls ? `wss://${ip}:3001` : `ws://${ip}:3000`);
+    const url = useTls ? `wss://${ip}:3001` : `ws://${ip}:3000`;
+    this.log("ws connect " + url);
+    await this.control.connect(url);
+    this.log("ws open");
     if (!this.clientKey) this.clientKey = await this.storage.read("client-key");
     const resp = await this._registerOnce();
     const key = parseRegistered(resp);
@@ -420,9 +468,10 @@ export default {
     let client = null;
     function ensureClient() {
       if (client) return client;
+      if (!app.ws) throw new Error('WebSocket capability 없음("network" 권한 필요)');
       client = new TvClient({
-        control: new WebSocketTransport(),
-        pointer: new WebSocketTransport(),
+        control: new CoreWsTransport(app.ws),
+        pointer: new CoreWsTransport(app.ws),
         storage,
         log: (m) => log.push("client", m),
         onState: (s) => {
@@ -476,7 +525,20 @@ export default {
         const st = client ? client.state : "disconnected";
         return executeActions(powerOnActions(st, !!mac), actionDeps());
       },
-      powerOff: () => executeActions(powerOffActions(), actionDeps()),
+      powerOff: async () => {
+        const r = await executeActions(powerOffActions(), actionDeps());
+        // 완전 종료 = TV 가 standby 로 전환되며 연결이 끊긴다. 연결을 정리해야 다음 power-on 이
+        // turnOnScreen(연결 가정)이 아니라 WoL 분기로 간다(실TV 검증: standby 에서 turnOnScreen 은 500).
+        if (client) {
+          try {
+            client.close();
+          } catch {
+            /* noop */
+          }
+          client = null;
+        }
+        return r;
+      },
       screenOff: () => executeActions(screenOffActions(), actionDeps()),
       screenOn: () => req("ssap://com.webos.service.tvpower/power/turnOnScreen"),
       volumeUp: () => req("ssap://audio/volumeUp"),
@@ -540,6 +602,39 @@ export default {
       throw new Error("MAC 못 찾음(같은 서브넷·TV 켜짐 확인)");
     }
 
+    // SSDP 로 LG TV 자동 발견(코어 net.udp.request 경유). webOS ST 우선, 없으면 ssdp:all 폴백
+    // (실TV 검증: webOS TV 는 webOSSecondScreen ST 에 응답 안 하고 ssdp:all 에 응답).
+    async function discoverTvs(timeoutMs) {
+      // ssdp:all 단일 — 실TV 검증: webOS TV 는 webOSSecondScreen ST 엔 응답 안 하고 ssdp:all 에 응답.
+      // 모든 UPnP 기기가 ssdp:all 에 응답하므로 LG 필터(SERVER:WebOS / urn:lge)로 선별. 1회로 빠르다.
+      const t = timeoutMs || 3000;
+      const r = await app.commands.execute("net.udp.request", {
+        host: "239.255.255.250",
+        port: 1900,
+        data: strToHex(buildMSearch(SSDP_ST_ALL, Math.max(1, Math.floor(t / 1000)))),
+        timeoutMs: t,
+        maxPackets: 128,
+      });
+      const packets = r && r.ok ? r.packets : (r && r.packets) || [];
+      const tvs = parseLgTvAddresses(packets);
+      log.push("discover", tvs.join(",") || "(없음)");
+      return tvs;
+    }
+
+    // TV 찾기 전체 흐름: 발견 → 첫 TV 를 tvIp 저장 → 그 IP 로 MAC 획득(arp).
+    async function autoFind() {
+      const tvs = await discoverTvs(4000);
+      if (!tvs.length) throw new Error("LG TV 못 찾음(같은 네트워크·TV 켜짐 확인)");
+      await storage.write("tvIp", tvs[0]);
+      let mac = "";
+      try {
+        mac = await scanMac();
+      } catch (e) {
+        log.push("scan-mac", String((e && e.message) || e));
+      }
+      return { ip: tvs[0], mac };
+    }
+
     // ── command 등록(전부 CLI/MCP 노출) ──────────────────────────────────────
     const reg = (name, spec) => ctx.subscriptions.push(app.commands.register(name, spec));
     // 핸들러의 일반 객체 반환은 {ok:true, ...객체}로 편다(registry 가 또 래핑해도 idempotent). 에러는 INTERNAL.
@@ -600,6 +695,18 @@ export default {
       params: {},
       returns: "{ mac }",
       handler: wrap(async () => ({ mac: await scanMac() })),
+    });
+    reg("discover", {
+      description: "네트워크에서 LG TV 자동 발견(SSDP)",
+      params: { timeoutMs: { type: "number", description: "탐색 시간(ms, 기본 4000)" } },
+      returns: "{ tvs }",
+      handler: wrap(async (p) => ({ tvs: await discoverTvs(p.timeoutMs) })),
+    });
+    reg("find", {
+      description: "LG TV 자동 발견 + IP/MAC 설정(SSDP→arp)",
+      params: {},
+      returns: "{ ip, mac }",
+      handler: wrap(async () => await autoFind()),
     });
 
     reg("power-on", {
@@ -705,6 +812,60 @@ export default {
     });
     reg("foreground-app", { description: "현재 앱", params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.foregroundApp()) });
 
+    reg("ws-probe", {
+      description: "(진단) webview 에서 WebSocket register 응답 수신 테스트",
+      params: { url: { type: "string", description: "ws://ip:3000 또는 wss://ip:3001", required: true } },
+      returns: "{ opened, recv, sample, note }",
+      handler: wrap(
+        (p) =>
+          new Promise((res) => {
+            let opened = false;
+            let recv = 0;
+            let sample = "";
+            let ws;
+            try {
+              ws = new WebSocket(p.url);
+            } catch (e) {
+              return res({ opened, recv, ctorError: String((e && e.message) || e) });
+            }
+            const t = setTimeout(() => {
+              try {
+                ws.close();
+              } catch {
+                /* noop */
+              }
+              res({ opened, recv, sample, note: "6s timeout" });
+            }, 6000);
+            ws.onopen = () => {
+              opened = true;
+              ws.send(JSON.stringify(buildRegisterPayload(undefined, makeId())));
+            };
+            ws.onmessage = (e) => {
+              recv++;
+              if (!sample) sample = String(e.data).slice(0, 120);
+              clearTimeout(t);
+              try {
+                ws.close();
+              } catch {
+                /* noop */
+              }
+              res({ opened, recv, sample });
+            };
+            ws.onerror = (e) => {
+              if (!opened) {
+                clearTimeout(t);
+                res({ opened, recv, error: String((e && e.message) || "error event") });
+              }
+            };
+            ws.onclose = (e) => {
+              if (!recv) {
+                clearTimeout(t);
+                res({ opened, recv, closeCode: e && e.code, closeReason: e && e.reason });
+              }
+            };
+          }),
+      ),
+    });
     reg("dump-log", {
       description: "디버그 로그 덤프(명령/SSAP/상태전이)",
       params: { lines: { type: "number", description: "끝에서 N 줄(기본 50)" } },
@@ -985,9 +1146,9 @@ export default {
       macIn.oninput = safe(() => storage.write("tvMac", macIn.value.trim()));
       const set = el("div", "lgtv-set");
       const setRow = el("div", "lgtv-setrow");
-      const scanBtn = el("button", "lgtv-tbtn", "MAC 자동탐색");
+      const scanBtn = el("button", "lgtv-tbtn", "TV 찾기");
       scanBtn.dataset.node = "scan";
-      scanBtn.onclick = safe(() => scanMac().then(syncInputs));
+      scanBtn.onclick = safe(() => autoFind().then(syncInputs));
       const connBtn = el("button", "lgtv-tbtn acc", "연결");
       connBtn.dataset.node = "connect";
       connBtn.onclick = safe(() => actions.connect());
