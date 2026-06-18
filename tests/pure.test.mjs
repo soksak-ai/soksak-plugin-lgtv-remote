@@ -13,6 +13,10 @@ import {
   powerOnActions,
   powerOffActions,
   screenOffActions,
+  buildMSearch,
+  strToHex,
+  parseLgTvAddresses,
+  SSDP_ST_ALL,
 } from "../main.js";
 
 // ── magicPacket (wol.go 포팅) ────────────────────────────────────────────────
@@ -123,4 +127,41 @@ test("screenOffActions: 화면만 끄기(원본 동작 보존)", () => {
       payload: { standbyMode: "active" },
     },
   ]);
+});
+
+// ── SSDP discovery (실TV 검증으로 확정: TV 는 ssdp:all 에 응답, SERVER:WebOS / urn:lge: 로 식별) ──
+test("buildMSearch: M-SEARCH 형식 + ST/MX 포함", () => {
+  const m = buildMSearch(SSDP_ST_ALL, 3);
+  assert.ok(m.startsWith("M-SEARCH * HTTP/1.1\r\n"), "요청 라인");
+  assert.ok(m.includes("HOST: 239.255.255.250:1900\r\n"), "HOST");
+  assert.ok(m.includes('MAN: "ssdp:discover"\r\n'), "MAN");
+  assert.ok(m.includes("MX: 3\r\n"), "MX");
+  assert.ok(m.includes("ST: ssdp:all\r\n"), "ST");
+  assert.ok(m.endsWith("\r\n\r\n"), "빈 줄 종료");
+});
+
+test("strToHex: 문자열 → UTF-8 hex", () => {
+  assert.equal(strToHex("M-"), "4d2d");
+});
+
+test("parseLgTvAddresses: SERVER:WebOS 또는 urn:lge 응답만 IP 추출(중복 제거)", () => {
+  const packets = [
+    { address: "192.168.35.203", text: "HTTP/1.1 200 OK\r\nSERVER: Synology/DSM\r\n" },
+    { address: "192.168.35.3", text: "HTTP/1.1 200 OK\r\nSERVER: WebOS/4.0.0 UPnP/1.0\r\n" },
+    { address: "192.168.35.3", text: "HTTP/1.1 200 OK\r\nST: urn:lge:device:tv:1\r\n" }, // 중복 IP
+    { address: "192.168.35.7", text: "SERVER: Chromecast/1.6.18\r\n" },
+    { address: "192.168.35.151", text: "SERVER: Hue/1.0 IpBridge\r\n" },
+  ];
+  assert.deepEqual(parseLgTvAddresses(packets), ["192.168.35.3"]);
+});
+
+test("parseLgTvAddresses: lge ST 만 있고 SERVER 없어도 추출", () => {
+  assert.deepEqual(
+    parseLgTvAddresses([{ address: "10.0.0.5", text: "NT: urn:lge:service:virtualSvc:1\r\n" }]),
+    ["10.0.0.5"],
+  );
+});
+
+test("parseLgTvAddresses: LG 아닌 기기는 0건", () => {
+  assert.deepEqual(parseLgTvAddresses([{ address: "1.2.3.4", text: "SERVER: Synology\r\n" }]), []);
 });

@@ -47,6 +47,14 @@
         "title": "MAC 자동 탐색"
       },
       {
+        "name": "discover",
+        "title": "TV 자동 발견"
+      },
+      {
+        "name": "find",
+        "title": "TV 찾기(IP/MAC 설정)"
+      },
+      {
         "name": "power-on",
         "title": "전원 켜기"
       },
@@ -141,6 +149,10 @@
       {
         "name": "dump-log",
         "title": "디버그 로그 덤프"
+      },
+      {
+        "name": "ws-probe",
+        "title": "WebSocket 진단"
       },
       {
         "name": "show",
