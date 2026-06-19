@@ -43,7 +43,7 @@
       { "name": "dpad", "title": "방향키/OK" },
       { "name": "button", "title": "리모컨 버튼" },
       { "name": "media", "title": "미디어 제어" },
-      { "name": "text-input", "title": "텍스트 입력" },
+      { "name": "text-input", "title": "텍스트 입력", "danger": "inject" },
       { "name": "text-delete", "title": "문자 삭제" },
       { "name": "text-enter", "title": "Enter 키" },
       { "name": "toast", "title": "토스트 표시" },
