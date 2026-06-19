@@ -120,7 +120,8 @@
       },
       {
         "name": "text-input",
-        "title": "텍스트 입력"
+        "title": "텍스트 입력",
+        "danger": "inject"
       },
       {
         "name": "text-delete",
