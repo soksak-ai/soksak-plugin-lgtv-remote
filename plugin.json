@@ -52,6 +52,7 @@
       { "name": "foreground-app", "title": "현재 앱" },
       { "name": "dump-log", "title": "디버그 로그 덤프" },
       { "name": "ws-probe", "title": "WebSocket 진단" },
+      { "name": "ssap", "title": "SSAP 진단 요청", "danger": "inject" },
       { "name": "show", "title": "리모컨 열기" },
       { "name": "hide", "title": "리모컨 닫기" },
       { "name": "toggle", "title": "리모컨 토글" },
@@ -74,7 +75,8 @@
       { "id": "settings-mac", "description": "TV MAC 입력 필드" },
       { "id": "scan", "description": "MAC 자동 탐색 버튼" },
       { "id": "connect", "description": "연결 버튼" },
-      { "id": "keyboard", "description": "키보드 입력 캡처 영역" }
+      { "id": "keyboard", "description": "네비 단축키 입력 캡처(방향/볼륨/채널/재생/음소거/뒤로/HOME)" },
+      { "id": "search", "description": "TV 검색/텍스트 입력 필드(IME)" }
     ]
   }
 }

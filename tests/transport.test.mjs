@@ -1,7 +1,7 @@
 // TvClient 계약 테스트(MockTransport, 네트워크 0) — 페어링/요청응답/타임아웃/재연결/포인터.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TvClient } from "../main.js";
+import { TvClient, buildSubscribe } from "../main.js";
 
 // 다음 마이크로태스크/타이머까지 양보(connect 내부 await 체인 flush).
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -111,6 +111,39 @@ test("close → disconnected + 이벤트 기반 재연결 1회(폴링 아님)", 
   control.fireClose();
   await tick();
   assert.equal(control.connectCount, 2); // 재연결로 connect 재호출
+});
+
+test("buildSubscribe(named): subscribe 메시지 형식", () => {
+  assert.deepEqual(buildSubscribe("ssap://x", "id-1"), { type: "subscribe", id: "id-1", uri: "ssap://x" });
+});
+
+test("subscribe: 지속 이벤트마다 onUpdate 반복(done 안 함) + dispose 로 해지", async () => {
+  const { c, control } = newClient();
+  const p = c.connect("1.2.3.4", false);
+  await tick();
+  control.inject({ type: "registered", id: control.last().id, payload: { "client-key": "K" } });
+  await p;
+
+  const updates = [];
+  const dispose = c.subscribe("ssap://com.webos.service.ime/registerRemoteKeyboard", (payload) =>
+    updates.push(payload),
+  );
+  await tick();
+  const sub = control.last();
+  assert.equal(sub.type, "subscribe");
+  assert.equal(sub.uri, "ssap://com.webos.service.ime/registerRemoteKeyboard");
+
+  // 같은 id 로 이벤트가 여러 번 와도 매번 onUpdate(request 와 달리 done 으로 정리되지 않음).
+  control.inject({ type: "response", id: sub.id, payload: { currentWidget: { focus: false } } });
+  control.inject({ type: "response", id: sub.id, payload: { currentWidget: { focus: true } } });
+  assert.equal(updates.length, 2);
+  assert.equal(updates[0].currentWidget.focus, false);
+  assert.equal(updates[1].currentWidget.focus, true);
+
+  // dispose 후엔 더 이상 호출 안 됨.
+  dispose();
+  control.inject({ type: "response", id: sub.id, payload: { currentWidget: { focus: false } } });
+  assert.equal(updates.length, 2);
 });
 
 test("button: getPointerInputSocket → socketPath → pointer 연결 + 프레임 송신", async () => {

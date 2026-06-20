@@ -107,6 +107,7 @@ async function main() {
   ok(!!find("power-on"), "ui.tree: power-on 노드 노출");
   ok(!!find("dpad/up"), "ui.tree: dpad/up 노드 노출(동적 키)");
   ok(!!find("settings-ip"), "ui.tree: settings-ip 입력 노출");
+  ok(!!find("search"), "ui.tree: search 텍스트 입력칸 노출(IME)");
   const header = find("titlebar/soksak-plugin-lgtv-remote/remote");
   ok(!!header, "ui.tree: 헤더 리모컨 아이콘 노출(titlebar 좌측)");
   const clicked = await rpc("ui.input.click", { address: header.address });
