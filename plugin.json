@@ -78,7 +78,8 @@
       { "id": "scan", "description": "MAC 자동 탐색 버튼" },
       { "id": "connect", "description": "연결 버튼" },
       { "id": "keyboard", "description": "네비 단축키 입력 캡처(방향/볼륨/채널/재생/음소거/뒤로/HOME)" },
-      { "id": "search", "description": "TV 검색/텍스트 입력 필드(IME)" }
+      { "id": "search", "description": "TV 검색/텍스트 입력 필드(IME)" },
+      { "id": "pointer-toggle", "description": "마우스 포인터 모드 토글(D-pad 트랙패드)" }
     ]
   }
 }
