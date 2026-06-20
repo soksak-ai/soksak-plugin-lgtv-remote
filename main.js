@@ -441,6 +441,17 @@ export class TvClient {
     this.pointer.send(`type:button\nname:${name}\n\n`);
   }
 
+  // 매직 리모컨 포인터 — 상대 이동(dx,dy). down=드래그 여부. "type:move\ndx\ndy\ndown\n\n".
+  async move(dx, dy, down) {
+    await this._ensurePointer();
+    this.pointer.send(`type:move\ndx:${dx | 0}\ndy:${dy | 0}\ndown:${down ? 1 : 0}\n\n`);
+  }
+  // 포인터 클릭(현재 커서 위치 선택): "type:click\n\n".
+  async click() {
+    await this._ensurePointer();
+    this.pointer.send(`type:click\n\n`);
+  }
+
   close() {
     this.control.close?.();
     this.pointer.close?.();
@@ -703,6 +714,14 @@ export default {
       button: async (name) => {
         await ensureConnected();
         return ensureClient().button(name);
+      },
+      pointerMove: async (dx, dy, down) => {
+        await ensureConnected();
+        return ensureClient().move(dx, dy, down);
+      },
+      pointerClick: async () => {
+        await ensureConnected();
+        return ensureClient().click();
       },
       media: (a) => req(`ssap://media.controls/${a}`),
       textInput: (text, replace) =>
@@ -975,6 +994,24 @@ export default {
       returns: "{ ok }",
       handler: wrap((p) => actions.button(p.name)),
     });
+    reg("pointer-move", {
+      description: "Move the TV pointer cursor by a relative offset (Magic Remote motion). Use for mouse-style navigation; dx/dy are relative pixels, down=1 drags.",
+      triggers: { ko: "포인터 마우스 커서 이동 매직리모컨 모션 네비게이션" },
+      params: {
+        dx: { type: "number", description: "가로 이동(px, 상대)", required: true },
+        dy: { type: "number", description: "세로 이동(px, 상대)", required: true },
+        down: { type: "boolean", description: "드래그(버튼 누른 채 이동)" },
+      },
+      returns: "{ ok }",
+      handler: wrap((p) => actions.pointerMove(p.dx, p.dy, p.down)),
+    });
+    reg("pointer-click", {
+      description: "Click at the current TV pointer cursor position (Magic Remote select). Use to select the item under the pointer.",
+      triggers: { ko: "포인터 클릭 선택 매직리모컨" },
+      params: {},
+      returns: "{ ok }",
+      handler: wrap(() => actions.pointerClick()),
+    });
     reg("media", {
       description: "Control TV media playback — play, pause, stop, fast-forward, or rewind. Use when user asks to play, pause, or control media on the TV.",
       triggers: { ko: "미디어 재생 일시정지 멈춤 빨리감기 되감기" },
@@ -1151,6 +1188,7 @@ export default {
         "M21 3.01H3c-1.1 0-2 .9-2 2V9h2V4.99h18v14.03H3V15H1v4.01c0 1.1.9 1.99 2 1.99h18c1.1 0 2-.9 2-1.99v-14c0-1.11-.9-2-2-2zM11 16l4-4-4-4v3H1v2h10v3z",
       play: "M8 5v14l11-7z",
       tv: "M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z",
+      pointer: "M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z",
     };
     const ico = (name, size = 22) =>
       `<svg class="lgtv-svg" viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" aria-hidden="true"><path d="${ICON[name] || ""}"/></svg>`;
@@ -1235,6 +1273,10 @@ export default {
 .lgtv-kb:focus{opacity:1;box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
 .lgtv-in.lgtv-ime-on{box-shadow:var(--neoin),inset 0 0 0 2px #3fb950}
 .lgtv-in.lgtv-ime-on::placeholder{color:#3fb950}
+.lgtv-pm-toggle{position:absolute;top:0;right:0;width:30px;height:30px;border-radius:50%;z-index:3}
+.lgtv-dpad.lgtv-pm{cursor:crosshair}
+.lgtv-dpad.lgtv-pm .lgtv-btn:not(.lgtv-pm-toggle){pointer-events:none;opacity:.35}
+.lgtv-dpad.lgtv-pm .lgtv-dpad-ring{box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
 .lgtv-kb-t{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.8}`;
       document.head.appendChild(s);
       return s;
@@ -1358,8 +1400,31 @@ export default {
         cell("btn/back", "back", "BACK", () => actions.button("BACK"), "lgtv-circle"),
       );
 
-      // D-pad: 원형 recessed 링 + 곡선 방향키 + 중앙 OK
+      // D-pad: 원형 recessed 링 + 곡선 방향키 + 중앙 OK + 마우스 포인터 토글
       const dpad = el("div", "lgtv-dpad");
+      // 포인터 모드 — 토글 ON 시 D-pad 영역이 트랙패드. 마우스 이동→커서(매직 리모컨), 클릭→선택.
+      // mousemove 는 빈번하므로 rAF 로 프레임당 1회만 누적 전송(webview WebSocket 과호출 방지).
+      let pointerMode = false;
+      let pmRaf = 0;
+      let pmDx = 0;
+      let pmDy = 0;
+      function flushPointerMove() {
+        pmRaf = 0;
+        if (pmDx || pmDy) {
+          kbSend(actions.pointerMove(pmDx, pmDy, false));
+          pmDx = 0;
+          pmDy = 0;
+        }
+      }
+      const pmToggle = el("button", "lgtv-btn lgtv-pm-toggle");
+      pmToggle.innerHTML = ico("pointer", 16);
+      pmToggle.dataset.node = "pointer-toggle";
+      pmToggle.title = "마우스 포인터 모드(매직 리모컨)";
+      pmToggle.onclick = safe(() => {
+        pointerMode = !pointerMode;
+        dpad.classList.toggle("lgtv-pm", pointerMode);
+        pmToggle.classList.toggle("lgtv-on", pointerMode);
+      });
       dpad.append(
         el("div", "lgtv-dpad-ring"),
         node("dpad/up", ico("up"), () => actions.dpad("up"), "lgtv-du"),
@@ -1367,6 +1432,24 @@ export default {
         node("dpad/left", ico("left"), () => actions.dpad("left"), "lgtv-dl"),
         node("dpad/right", ico("right"), () => actions.dpad("right"), "lgtv-dr"),
         node("dpad/enter", "OK", () => actions.dpad("enter"), "lgtv-ok"),
+        pmToggle,
+      );
+      dpad.addEventListener("mousemove", (e) => {
+        if (!pointerMode) return;
+        pmDx += e.movementX;
+        pmDy += e.movementY;
+        if (!pmRaf) pmRaf = requestAnimationFrame(flushPointerMove);
+      });
+      dpad.addEventListener(
+        "click",
+        (e) => {
+          if (!pointerMode) return;
+          if (e.target.closest(".lgtv-pm-toggle")) return; // 토글 버튼 클릭은 통과
+          e.preventDefault();
+          e.stopPropagation();
+          kbSend(actions.pointerClick());
+        },
+        true, // capture — 방향 버튼보다 먼저 가로채 포인터 클릭으로
       );
 
       // VOL / CH 패널(둘레진 recessed)
