@@ -148,6 +148,21 @@ export function shouldReconnect(state) {
   return state === "disconnected";
 }
 
+// 버튼 조작 직전 재연결 필요 여부 — disconnected 만. connected/screenOff 는 control 소켓이 살아있고,
+// connecting 은 진행 중이라 중복 connect 를 피한다.
+export function shouldConnectOnDemand(state) {
+  return state === "disconnected";
+}
+
+// 모달이 열려 있는 동안 주기 틱(keepalive)의 행동 결정.
+// connected → 가벼운 read 핑으로 idle 끊김 예방. disconnected+ip → 재연결. 그 외(screenOff 의도적
+// 꺼짐·connecting 진행 중·ip 미설정) → 건드리지 않음.
+export function keepalivePlan(state, hasIp) {
+  if (state === "connected") return "ping";
+  if (state === "disconnected" && hasIp) return "reconnect";
+  return "idle";
+}
+
 // ── powerSequence (개선 ON/OFF — 레거시 보완) ────────────────────────────────
 const SSAP = {
   turnOnScreen: "ssap://com.webos.service.tvpower/power/turnOnScreen",
@@ -444,6 +459,33 @@ function makeDebugLog(cap = 200) {
 const DPAD = { up: "UP", down: "DOWN", left: "LEFT", right: "RIGHT", enter: "ENTER" };
 const PLUGIN_ID = "soksak-plugin-lgtv-remote";
 
+// ── 네비 단축키 매핑(키보드 영역과 단위테스트의 단일 진실) ───────────────────
+// 텍스트 입력은 별도 검색칸이 담당하므로 이 영역은 순수 네비/제어 단축키만 — [ ] · space 등
+// 인쇄문자도 검색 입력과 충돌 없이 단축키로 쓸 수 있다. 미매핑 키는 null(기본 동작 유지).
+const KEY_VOL_DOWN = new Set(["[", "-", "_"]);
+const KEY_VOL_UP = new Set(["]", "+", "="]);
+export function mapRemoteKey(key) {
+  switch (key) {
+    case "ArrowUp": return { type: "dpad", dir: "up" };
+    case "ArrowDown": return { type: "dpad", dir: "down" };
+    case "ArrowLeft": return { type: "dpad", dir: "left" };
+    case "ArrowRight": return { type: "dpad", dir: "right" };
+    case "Enter": return { type: "ok" };
+    case "Backspace":
+    case "Escape": return { type: "back" };
+    case "PageUp": return { type: "channel", dir: "up" };
+    case "PageDown": return { type: "channel", dir: "down" };
+    case " ": return { type: "playpause" };
+    case "m":
+    case "M": return { type: "mute" };
+    case "h":
+    case "H": return { type: "home" };
+  }
+  if (KEY_VOL_DOWN.has(key)) return { type: "volume", dir: "down" };
+  if (KEY_VOL_UP.has(key)) return { type: "volume", dir: "up" };
+  return null;
+}
+
 // ── 플러그인 entry ───────────────────────────────────────────────────────────
 let _ui = null; // deactivate 정리용(modal/fab/style)
 
@@ -508,8 +550,59 @@ export default {
       },
     });
 
-    // 모든 동작의 단일 진실 — command 핸들러와 UI 버튼이 공유.
-    const req = (uri, payload) => actionDeps().request(uri, payload);
+    // 조작 직전 연결 보장 — 끊겨 있고 IP 가 설정돼 있으면 마지막 IP 로 재연결(다시 열·버튼 누를 때 복구).
+    // 이미 살아있으면(connected/screenOff/connecting) no-op. 실패는 조용히 로깅(동작 자체는 진행 시도).
+    async function ensureConnected() {
+      const state = client ? client.state : "disconnected";
+      if (!shouldConnectOnDemand(state)) return;
+      const { ip } = await getCfg();
+      if (!ip) return; // 아직 IP 미설정 — 설정 UI 가 안내, 강제 에러 안 냄
+      try {
+        await actionDeps().connect();
+      } catch (e) {
+        log.push("reconnect", "on-demand 실패: " + (e && e.message ? e.message : e));
+      }
+    }
+
+    // keepalive — 모달이 열려 있는 동안만 주기 틱. connected 면 가벼운 read 핑으로 idle 끊김 예방,
+    // disconnected+ip 면 재연결, 그 외(screenOff/connecting/ip 미설정)는 가만(keepalivePlan).
+    let kaTimer = null;
+    const KEEPALIVE_MS = 30000;
+    async function keepaliveTick() {
+      const { ip } = await getCfg();
+      const plan = keepalivePlan(client ? client.state : "disconnected", !!ip);
+      if (plan === "ping") {
+        try {
+          await actionDeps().request("ssap://com.webos.service.tvpower/power/getPowerState");
+        } catch (e) {
+          log.push("keepalive", "ping 실패: " + (e && e.message ? e.message : e));
+        }
+      } else if (plan === "reconnect") {
+        try {
+          await actionDeps().connect();
+        } catch (e) {
+          log.push("keepalive", "재연결 실패: " + (e && e.message ? e.message : e));
+        }
+      }
+    }
+    function startKeepalive() {
+      if (kaTimer) return;
+      kaTimer = setInterval(() => {
+        keepaliveTick().catch((e) => log.push("keepalive", "tick 오류: " + (e && e.message ? e.message : e)));
+      }, KEEPALIVE_MS);
+    }
+    function stopKeepalive() {
+      if (kaTimer) {
+        clearInterval(kaTimer);
+        kaTimer = null;
+      }
+    }
+
+    // 모든 동작의 단일 진실 — command 핸들러와 UI 버튼이 공유. SSAP 동작은 연결 보장 후 전송.
+    const req = async (uri, payload) => {
+      await ensureConnected();
+      return actionDeps().request(uri, payload);
+    };
     const actions = {
       connect: async () => {
         await actionDeps().connect();
@@ -550,8 +643,14 @@ export default {
       openChannel: (n) => req("ssap://tv/openChannel", { channelId: n }),
       inputs: () => req("ssap://tv/getExternalInputList"),
       switchInput: (id) => req("ssap://tv/switchInput", { inputId: id }),
-      dpad: (dir) => ensureClient().button(DPAD[dir] || "ENTER"),
-      button: (name) => ensureClient().button(name),
+      dpad: async (dir) => {
+        await ensureConnected();
+        return ensureClient().button(DPAD[dir] || "ENTER");
+      },
+      button: async (name) => {
+        await ensureConnected();
+        return ensureClient().button(name);
+      },
       media: (a) => req(`ssap://media.controls/${a}`),
       textInput: (text, replace) =>
         req("ssap://com.webos.service.ime/insertText", { text, replace: !!replace }),
@@ -650,19 +749,22 @@ export default {
     };
 
     reg("connect", {
-      description: "TV 연결(페어링)",
+      description: "Connect to LG webOS TV via WebSocket and complete pairing (SSAP register). Use when user asks to connect or pair with the TV.",
+      triggers: { ko: "TV 연결 페어링 접속" },
       params: {},
       returns: "{ state }",
       handler: wrap(async () => ({ state: await actions.connect() })),
     });
     reg("disconnect", {
-      description: "TV 연결 해제",
+      description: "Disconnect from the TV and release the WebSocket connection. Use when user asks to disconnect or close the TV connection.",
+      triggers: { ko: "TV 연결 해제 끊기 접속 종료" },
       params: {},
       returns: "{ state }",
       handler: wrap(() => ({ state: actions.disconnect() })),
     });
     reg("status", {
-      description: "연결 상태/IP/MAC/페어링 여부",
+      description: "Read current TV connection state — connection status, IP address, MAC address, and pairing key presence. Use when user asks about TV connection state.",
+      triggers: { ko: "TV 연결 상태 IP MAC 페어링 확인" },
       params: {},
       returns: "{ state, ip, mac, paired }",
       handler: wrap(async () => {
@@ -671,7 +773,8 @@ export default {
       }),
     });
     reg("set-ip", {
-      description: "TV IP 설정",
+      description: "Set the TV IP address used for WebSocket connection. Use when user provides a TV IP or wants to change the target TV.",
+      triggers: { ko: "TV IP 설정 주소 변경 입력" },
       params: { ip: { type: "string", description: "TV IP 주소", required: true } },
       returns: "{ ip }",
       handler: wrap(async (p) => {
@@ -681,7 +784,8 @@ export default {
       }),
     });
     reg("set-mac", {
-      description: "TV MAC 설정(Wake-on-LAN 용)",
+      description: "Set the TV MAC address for Wake-on-LAN. Use when user provides a MAC address or wants to enable WoL power-on.",
+      triggers: { ko: "TV MAC 주소 설정 WoL 매직패킷" },
       params: { mac: { type: "string", description: "TV MAC 주소", required: true } },
       returns: "{ mac }",
       handler: wrap(async (p) => {
@@ -691,26 +795,30 @@ export default {
       }),
     });
     reg("scan-mac", {
-      description: "ping+arp 로 TV MAC 자동 획득(같은 서브넷)",
+      description: "Auto-detect TV MAC address via ping+arp (same subnet required). Use when user asks to find or auto-detect the TV MAC address.",
+      triggers: { ko: "MAC 자동 감지 arp ping 스캔" },
       params: {},
       returns: "{ mac }",
       handler: wrap(async () => ({ mac: await scanMac() })),
     });
     reg("discover", {
-      description: "네트워크에서 LG TV 자동 발견(SSDP)",
+      description: "Scan the network for LG webOS TVs using SSDP. Returns a list of found TV IP addresses. Use when user asks to search or discover TVs on the network.",
+      triggers: { ko: "LG TV 네트워크 탐색 발견 검색 SSDP" },
       params: { timeoutMs: { type: "number", description: "탐색 시간(ms, 기본 4000)" } },
       returns: "{ tvs }",
       handler: wrap(async (p) => ({ tvs: await discoverTvs(p.timeoutMs) })),
     });
     reg("find", {
-      description: "LG TV 자동 발견 + IP/MAC 설정(SSDP→arp)",
+      description: "Auto-discover LG TV on the network and save its IP and MAC address (SSDP then arp). Use when user asks to find and configure the TV automatically.",
+      triggers: { ko: "TV 자동 찾기 발견 IP MAC 자동 설정" },
       params: {},
       returns: "{ ip, mac }",
       handler: wrap(async () => await autoFind()),
     });
 
     reg("power-on", {
-      description: "전원 켜기 — 미연결이면 WoL 송신 + 자동 연결",
+      description: "Power on the LG TV — sends Wake-on-LAN if disconnected, then connects. Use when user asks to turn the TV on.",
+      triggers: { ko: "TV 전원 켜기 켜 파워 온 WoL" },
       params: {},
       returns: "{ state }",
       handler: wrap(async () => {
@@ -719,101 +827,150 @@ export default {
       }),
     });
     reg("power-off", {
-      description: "전원 끄기 — 소리·전원까지 완전 종료",
+      description: "Power off the LG TV completely — mutes audio then sends system turn-off (full shutdown, not sleep). Use when user asks to turn the TV off.",
+      triggers: { ko: "TV 전원 끄기 꺼 파워 오프 종료" },
       params: {},
       returns: "{ ok }",
       danger: "destructive",
       handler: wrap(() => actions.powerOff()),
     });
     reg("screen-off", {
-      description: "화면만 끄기(스탠바이)",
+      description: "Turn off only the TV screen (standby mode — connection stays alive). Use when user asks to blank the screen or put it on standby without full shutdown.",
+      triggers: { ko: "TV 화면 끄기 스탠바이 화면만 꺼" },
       params: {},
       returns: "{ ok }",
       danger: "destructive",
       handler: wrap(() => actions.screenOff()),
     });
-    reg("screen-on", { description: "화면 켜기", params: {}, returns: "{ ok }", handler: wrap(() => actions.screenOn()) });
+    reg("screen-on", {
+      description: "Turn on the TV screen (wake from standby). Use when user asks to turn the screen back on without full power cycle.",
+      triggers: { ko: "TV 화면 켜기 스탠바이 해제" },
+      params: {}, returns: "{ ok }", handler: wrap(() => actions.screenOn()),
+    });
 
-    reg("volume-up", { description: "볼륨 +", params: {}, returns: "{ ok }", handler: wrap(() => actions.volumeUp()) });
-    reg("volume-down", { description: "볼륨 -", params: {}, returns: "{ ok }", handler: wrap(() => actions.volumeDown()) });
+    reg("volume-up", {
+      description: "Increase TV volume by one step. Use when user asks to turn volume up or raise the sound.",
+      triggers: { ko: "볼륨 올리기 소리 크게 음량 증가" },
+      params: {}, returns: "{ ok }", handler: wrap(() => actions.volumeUp()),
+    });
+    reg("volume-down", {
+      description: "Decrease TV volume by one step. Use when user asks to turn volume down or lower the sound.",
+      triggers: { ko: "볼륨 줄이기 소리 작게 음량 감소" },
+      params: {}, returns: "{ ok }", handler: wrap(() => actions.volumeDown()),
+    });
     reg("set-volume", {
-      description: "볼륨 설정(0-100)",
+      description: "Set TV volume to a specific level (0–100). Use when user gives an explicit volume number.",
+      triggers: { ko: "볼륨 설정 음량 지정 몇으로" },
       params: { level: { type: "number", description: "0-100", required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.setVolume(p.level)),
     });
     reg("mute", {
-      description: "음소거 on/off",
+      description: "Mute or unmute the TV audio. Use when user asks to mute, silence, or unmute the TV sound.",
+      triggers: { ko: "음소거 뮤트 소리 끄기 켜기" },
       params: { on: { type: "boolean", description: "true=음소거", required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.mute(p.on)),
     });
-    reg("channel-up", { description: "채널 +", params: {}, returns: "{ ok }", handler: wrap(() => actions.channelUp()) });
-    reg("channel-down", { description: "채널 -", params: {}, returns: "{ ok }", handler: wrap(() => actions.channelDown()) });
+    reg("channel-up", {
+      description: "Switch to the next TV channel. Use when user asks to go to the next channel or channel up.",
+      triggers: { ko: "채널 올리기 다음 채널 증가" },
+      params: {}, returns: "{ ok }", handler: wrap(() => actions.channelUp()),
+    });
+    reg("channel-down", {
+      description: "Switch to the previous TV channel. Use when user asks to go to the previous channel or channel down.",
+      triggers: { ko: "채널 내리기 이전 채널 감소" },
+      params: {}, returns: "{ ok }", handler: wrap(() => actions.channelDown()),
+    });
     reg("open-channel", {
-      description: "채널 번호로 이동",
+      description: "Open a specific TV channel by channel ID or number. Use when user asks to go to a particular channel.",
+      triggers: { ko: "채널 번호 이동 채널 선택 열기" },
       params: { number: { type: "string", description: "채널 id/번호", required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.openChannel(p.number)),
     });
-    reg("inputs", { description: "외부 입력 목록", params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.inputs()) });
+    reg("inputs", {
+      description: "List available external inputs on the TV (HDMI, AV, etc.). Use when user asks which inputs the TV has.",
+      triggers: { ko: "TV 외부 입력 목록 HDMI 소스 리스트" },
+      params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.inputs()),
+    });
     reg("switch-input", {
-      description: "입력 소스 전환(HDMI 등)",
+      description: "Switch the TV input source (e.g., to HDMI 1, HDMI 2). Use when user asks to change the TV input.",
+      triggers: { ko: "입력 소스 전환 HDMI 변경 선택" },
       params: { id: { type: "string", description: "inputId", required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.switchInput(p.id)),
     });
 
     reg("dpad", {
-      description: "방향키/OK",
+      description: "Press a directional pad key or OK on the TV remote. Use when user asks to navigate the TV UI (up/down/left/right/enter).",
+      triggers: { ko: "방향키 위 아래 왼쪽 오른쪽 확인 OK 네비게이션" },
       params: { dir: { type: "string", description: "방향", enum: ["up", "down", "left", "right", "enter"], required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.dpad(p.dir)),
     });
     reg("button", {
-      description: "리모컨 버튼(HOME/BACK/MENU 등)",
+      description: "Press a named remote control button on the TV (e.g., HOME, BACK, MENU, GUIDE). Use when user asks to press a specific TV remote button.",
+      triggers: { ko: "리모컨 버튼 HOME 홈 BACK 뒤로 MENU 메뉴" },
       params: { name: { type: "string", description: "버튼 이름", required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.button(p.name)),
     });
     reg("media", {
-      description: "미디어 제어",
+      description: "Control TV media playback — play, pause, stop, fast-forward, or rewind. Use when user asks to play, pause, or control media on the TV.",
+      triggers: { ko: "미디어 재생 일시정지 멈춤 빨리감기 되감기" },
       params: { action: { type: "string", description: "재생 제어", enum: ["play", "pause", "stop", "fastForward", "rewind"], required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.media(p.action)),
     });
     reg("text-input", {
-      description: "TV 입력창에 텍스트 입력",
+      description: "Type text into the TV's active input field (inserts or replaces). Use when user asks to type, search, or enter text on the TV.",
+      triggers: { ko: "TV 텍스트 입력 타이핑 검색어 입력창" },
       params: { text: { type: "string", description: "입력 텍스트", required: true }, replace: { type: "boolean", description: "기존 대체" } },
       returns: "{ ok }",
       danger: "inject",
       handler: wrap((p) => actions.textInput(p.text, p.replace)),
     });
     reg("text-delete", {
-      description: "문자 삭제",
+      description: "Delete characters from the TV's active input field. Use when user asks to delete or backspace text on the TV.",
+      triggers: { ko: "TV 텍스트 삭제 지우기 백스페이스" },
       params: { count: { type: "number", description: "삭제 개수", required: true } },
       returns: "{ ok }",
       danger: "inject",
       handler: wrap((p) => actions.textDelete(p.count)),
     });
-    reg("text-enter", { description: "Enter 키", params: {}, returns: "{ ok }", danger: "inject", handler: wrap(() => actions.textEnter()) });
+    reg("text-enter", {
+      description: "Send Enter key to the TV input field (confirm search or form). Use when user asks to press Enter or submit text on the TV.",
+      triggers: { ko: "TV 엔터 입력 확인 검색 실행" },
+      params: {}, returns: "{ ok }", danger: "inject", handler: wrap(() => actions.textEnter()),
+    });
     reg("toast", {
-      description: "TV 화면에 토스트 표시",
+      description: "Show a toast notification on the TV screen. Use when user asks to display a message or notification on the TV.",
+      triggers: { ko: "TV 토스트 알림 메시지 표시" },
       params: { message: { type: "string", description: "메시지", required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.toast(p.message)),
     });
-    reg("apps", { description: "앱 목록", params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.apps()) });
+    reg("apps", {
+      description: "List installed apps on the LG TV. Use when user asks what apps are on the TV or wants to see the app list.",
+      triggers: { ko: "TV 앱 목록 설치된 앱 리스트" },
+      params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.apps()),
+    });
     reg("launch", {
-      description: "앱 실행",
+      description: "Launch an app on the LG TV by app ID. Use when user asks to open or start a specific app on the TV.",
+      triggers: { ko: "TV 앱 실행 열기 시작 앱 실행" },
       params: { id: { type: "string", description: "appId", required: true } },
       returns: "{ ok }",
       handler: wrap((p) => actions.launch(p.id)),
     });
-    reg("foreground-app", { description: "현재 앱", params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.foregroundApp()) });
+    reg("foreground-app", {
+      description: "Get the currently active (foreground) app on the LG TV. Use when user asks which app is currently open on the TV.",
+      triggers: { ko: "TV 현재 앱 포그라운드 활성 앱 확인" },
+      params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.foregroundApp()),
+    });
 
     reg("ws-probe", {
-      description: "(진단) webview 에서 WebSocket register 응답 수신 테스트",
+      description: "(Diagnostic) Test WebSocket register response from webview — verifies raw TV WebSocket connectivity without the core transport. Use for debugging connection issues.",
       params: { url: { type: "string", description: "ws://ip:3000 또는 wss://ip:3001", required: true } },
       returns: "{ opened, recv, sample, note }",
       handler: wrap(
@@ -866,16 +1023,44 @@ export default {
           }),
       ),
     });
+    reg("ssap", {
+      description: "(Diagnostic) Send an arbitrary SSAP URI request to the TV — for live testing and debugging. Ensures connection before sending.",
+      triggers: { ko: "SSAP 직접 요청 진단 디버그" },
+      params: {
+        uri: { type: "string", description: "ssap:// URI", required: true },
+        payload: { type: "object", description: "요청 payload(선택)" },
+      },
+      returns: "{ ok, result }",
+      danger: "inject",
+      handler: wrap(async (p) => ({ result: await req(p.uri, p.payload) })),
+    });
     reg("dump-log", {
-      description: "디버그 로그 덤프(명령/SSAP/상태전이)",
+      description: "(Diagnostic) Dump the internal debug log — commands, SSAP calls, and state transitions. Use when debugging TV communication issues.",
+      triggers: { ko: "디버그 로그 덤프 통신 기록 확인" },
       params: { lines: { type: "number", description: "끝에서 N 줄(기본 50)" } },
       returns: "{ entries }",
       handler: wrap((p) => ({ entries: log.tail(p.lines) })),
     });
-    reg("show", { description: "리모컨 열기", params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(true) })) });
-    reg("hide", { description: "리모컨 닫기", params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(false) })) });
-    reg("minimize", { description: "최소화(우측 상단 아이콘)", params: {}, returns: "{ minimized }", handler: wrap(() => ({ minimized: !setVisible(false) })) });
-    reg("toggle", { description: "리모컨 토글", params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(!isVisible()) })) });
+    reg("show", {
+      description: "Open the LG TV remote control panel UI. Use when user asks to show or open the TV remote.",
+      triggers: { ko: "리모컨 열기 보이기 TV 패널" },
+      params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(true) })),
+    });
+    reg("hide", {
+      description: "Close the LG TV remote control panel UI. Use when user asks to hide or close the TV remote.",
+      triggers: { ko: "리모컨 닫기 숨기기 TV 패널 닫기" },
+      params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(false) })),
+    });
+    reg("minimize", {
+      description: "Minimize the LG TV remote panel to the header icon. Use when user asks to minimize the remote.",
+      triggers: { ko: "리모컨 최소화 아이콘 축소" },
+      params: {}, returns: "{ minimized }", handler: wrap(() => ({ minimized: !setVisible(false) })),
+    });
+    reg("toggle", {
+      description: "Toggle the LG TV remote panel open or closed. Use when user asks to toggle or switch the remote visibility.",
+      triggers: { ko: "리모컨 토글 열기 닫기 전환" },
+      params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(!isVisible()) })),
+    });
 
     // ── 모달 UI(overlay:screen) ───────────────────────────────────────────────
     const el = (tag, cls, txt) => {
@@ -1043,6 +1228,10 @@ export default {
       if (v) {
         syncInputs();
         fitModal();
+        ensureConnected(); // 다시 열 때 끊겨 있으면 마지막 IP 로 재연결(fire-and-forget)
+        startKeepalive(); // 열려 있는 동안 idle 끊김 예방
+      } else {
+        stopKeepalive(); // 닫으면 핑 멈춤
       }
       registerHeader(); // active 갱신
       return v;
@@ -1155,24 +1344,64 @@ export default {
       setRow.append(scanBtn, connBtn);
       set.append(ipIn, macIn, setRow);
 
-      // 키보드 입력 영역 — 포커스 후 키를 TV 로 전송(방향/Enter/Escape/Backspace/문자 IME). 원본 kbInput 이식.
+      // 네비 단축키 영역 — 포커스 후 물리키를 리모컨 동작으로(방향/볼륨/채널/재생/음소거/뒤로/HOME).
+      // 매핑은 mapRemoteKey(단일 진실 — 단위테스트와 공유). 텍스트 입력은 아래 검색칸이 담당.
+      // [주의] 매핑된 물리키는 임의 선택일 뿐 — TV 가 실제 반응하는지는 SSAP 동작 자체에 달림(실측 대상).
       const kb = el("div", "lgtv-kb");
       kb.tabIndex = 0;
       kb.dataset.node = "keyboard";
-      kb.innerHTML = ico("input", 22) + '<span class="lgtv-kb-t">키보드 입력 (클릭 후 타이핑)</span>';
+      kb.innerHTML =
+        ico("input", 22) +
+        '<span class="lgtv-kb-t">리모컨 키 (클릭 후 ←↑↓→ · Enter · [ ] 볼륨 · PgUp/Dn 채널)</span>';
       const kbSend = (p) => Promise.resolve(p).catch((e) => log.push("kb-err", e && e.message ? e.message : e));
+      let muted = false; // m 토글(로컬) — TV 상태 쿼리 없이 번갈아 on/off
+      let playing = true; // space 토글(로컬) — play ↔ pause
+      function dispatchRemoteKey(a) {
+        switch (a.type) {
+          case "dpad": return kbSend(actions.dpad(a.dir));
+          case "ok": return kbSend(actions.dpad("enter"));
+          case "back": return kbSend(actions.button("BACK"));
+          case "home": return kbSend(actions.button("HOME"));
+          case "volume": return kbSend(a.dir === "up" ? actions.volumeUp() : actions.volumeDown());
+          case "channel": return kbSend(a.dir === "up" ? actions.channelUp() : actions.channelDown());
+          case "playpause":
+            playing = !playing;
+            return kbSend(actions.media(playing ? "play" : "pause"));
+          case "mute":
+            muted = !muted;
+            return kbSend(actions.mute(muted));
+        }
+      }
       kb.onkeydown = (e) => {
-        const nav = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
-        if (nav[e.key]) kbSend(actions.dpad(nav[e.key]));
-        else if (e.key === "Enter") kbSend(actions.dpad("enter"));
-        else if (e.key === "Escape") kbSend(actions.button("BACK"));
-        else if (e.key === "Backspace") kbSend(actions.textDelete(1));
-        else if (e.key.length === 1) kbSend(actions.textInput(e.key, false));
-        else return; // 그 외 키(Tab 등)는 기본 동작 유지
+        const a = mapRemoteKey(e.key);
+        if (!a) return; // 미매핑(문자·Tab 등)은 기본 동작 유지
         e.preventDefault();
+        dispatchRemoteKey(a);
       };
 
-      modal.append(head, top, dpad, vc, aux, kb, set);
+      // 검색/텍스트 입력칸 — 타이핑하면 TV 입력창 전체를 현재 값으로 미러(insertText replace).
+      // 한글 조합은 compositionend 에 완성 문자열 반영. 삭제도 값 변화로 함께 반영. Enter=검색 실행.
+      const search = el("input", "lgtv-in");
+      search.placeholder = "TV 검색/텍스트 (여기 타이핑 → TV 입력창)";
+      search.dataset.node = "search";
+      search.autocomplete = "off";
+      search.autocapitalize = "off";
+      search.spellcheck = false;
+      const pushText = () => kbSend(actions.textInput(search.value, true));
+      search.oninput = (e) => {
+        if (!e.isComposing) pushText(); // 조합 중(한글)엔 보류 → compositionend 에서 한 번
+      };
+      search.addEventListener("compositionend", () => pushText());
+      search.onkeydown = (e) => {
+        e.stopPropagation(); // 네비 단축키 영역과 분리 — 여기선 글자가 그대로 입력돼야 함
+        if (e.key === "Enter") {
+          e.preventDefault();
+          kbSend(actions.textEnter());
+          search.value = "";
+        }
+      };
+
+      modal.append(head, top, dpad, vc, aux, kb, search, set);
       backdrop.append(modal);
       // backdrop 빈 영역 클릭 = 최소화.
       backdrop.onclick = (e) => {
@@ -1192,6 +1421,7 @@ export default {
       destroy() {
         ro?.disconnect();
         if (fitRaf) cancelAnimationFrame(fitRaf);
+        stopKeepalive();
         setOverlayGate(false);
         backdrop?.remove();
         document.getElementById("soksak-lgtv-style")?.remove();
