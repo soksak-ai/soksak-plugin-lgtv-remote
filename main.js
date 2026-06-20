@@ -525,6 +525,24 @@ export default {
     const app = ctx.app;
     const log = makeDebugLog(200);
 
+    // ── i18n ─────────────────────────────────────────────────────────────────
+    const I18N = {
+      "header.title":    { en: "LG TV Remote",                            ko: "LG TV 리모컨" },
+      "btn.minimize":    { en: "Minimize",                                ko: "최소화" },
+      "pm.title":        { en: "Pointer mode (Magic Remote)",             ko: "마우스 포인터 모드(매직 리모컨)" },
+      "ip.placeholder":  { en: "TV IP (e.g. 192.168.0.10)",              ko: "TV IP (예: 192.168.0.10)" },
+      "mac.placeholder": { en: "TV MAC (e.g. aa:bb:cc:dd:ee:ff)",        ko: "TV MAC (예: aa:bb:cc:dd:ee:ff)" },
+      "btn.scan":        { en: "Find TV",                                 ko: "TV 찾기" },
+      "btn.connect":     { en: "Connect",                                 ko: "연결" },
+      "kb.hint":         { en: "Remote keys (click first, then ←↑↓→ · Enter · [ ] vol · PgUp/Dn ch)",
+                           ko: "리모컨 키 (클릭 후 ←↑↓→ · Enter · [ ] 볼륨 · PgUp/Dn 채널)" },
+      "search.ime.on":   { en: "Ready — type to send to TV input",
+                           ko: "입력 가능 — 타이핑하면 TV 입력창으로" },
+      "search.ime.off":  { en: "Select an input field on the TV first (streaming apps may not support direct input)",
+                           ko: "TV에서 입력창을 먼저 선택 (유튜브 등 앱은 직접입력 불가)" },
+    };
+    const t = (k) => { const s = I18N[k]; const l = app.locale ? app.locale() : "ko"; return s ? (s[l] ?? s.en ?? s.ko) : k; };
+
     // 설정·client-key 는 plugin storage 단일(프로젝트 무관). settings.set 불확실성 회피.
     const storage = {
       read: async (k) => (app.storage ? await app.storage.read(k) : null),
@@ -1274,9 +1292,10 @@ export default {
 .lgtv-in.lgtv-ime-on{box-shadow:var(--neoin),inset 0 0 0 2px #3fb950}
 .lgtv-in.lgtv-ime-on::placeholder{color:#3fb950}
 .lgtv-pm-toggle{position:absolute;top:0;right:0;width:30px;height:30px;border-radius:50%;z-index:3}
-.lgtv-dpad.lgtv-pm{cursor:crosshair}
-.lgtv-dpad.lgtv-pm .lgtv-btn:not(.lgtv-pm-toggle){pointer-events:none;opacity:.35}
-.lgtv-dpad.lgtv-pm .lgtv-dpad-ring{box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
+.lgtv-dpad{transition:height .15s,width .15s}
+.lgtv-dpad.lgtv-pm{width:100%;height:auto;aspect-ratio:16/9;cursor:crosshair;user-select:none;-webkit-user-select:none}
+.lgtv-dpad.lgtv-pm .lgtv-btn:not(.lgtv-pm-toggle){pointer-events:none;opacity:.2}
+.lgtv-dpad.lgtv-pm .lgtv-dpad-ring{border-radius:16px;box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
 .lgtv-kb-t{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.8}`;
       document.head.appendChild(s);
       return s;
@@ -1296,9 +1315,7 @@ export default {
     function updateSearchState() {
       if (!search) return;
       search.classList.toggle("lgtv-ime-on", imeFocused);
-      search.placeholder = imeFocused
-        ? "입력 가능 — 타이핑하면 TV 입력창으로"
-        : "TV에서 입력창을 먼저 선택 (유튜브 등 앱은 직접입력 불가)";
+      search.placeholder = imeFocused ? t("search.ime.on") : t("search.ime.off");
     }
     async function syncInputs() {
       if (!ipIn || !macIn) return;
@@ -1355,7 +1372,7 @@ export default {
       const d = app.ui.registerHeaderAction({
         id: "remote",
         label: "📺",
-        title: "LG TV 리모컨",
+        title: t("header.title"),
         active: isVisible(),
         onClick: () => setVisible(!isVisible()),
       });
@@ -1387,7 +1404,7 @@ export default {
       dot = el("span", "lgtv-dot");
       const minBtn = el("button", "lgtv-min", "—");
       minBtn.dataset.node = "minimize";
-      minBtn.title = "최소화";
+      minBtn.title = t("btn.minimize");
       minBtn.onclick = safe(async () => setVisible(false));
       head.append(htitle, dot, minBtn);
 
@@ -1403,23 +1420,33 @@ export default {
       // D-pad: 원형 recessed 링 + 곡선 방향키 + 중앙 OK + 마우스 포인터 토글
       const dpad = el("div", "lgtv-dpad");
       // 포인터 모드 — 토글 ON 시 D-pad 영역이 트랙패드. 마우스 이동→커서(매직 리모컨), 클릭→선택.
-      // mousemove 는 빈번하므로 rAF 로 프레임당 1회만 누적 전송(webview WebSocket 과호출 방지).
+      // [실측] webOS 는 큰 dx 점프를 무시하고 작은 스텝 연속만 커서를 움직인다. 그래서 누적 이동을
+      // 작은 스텝(PM_STEP)으로 쪼개 일정 간격(PM_PUMP_MS)으로 흘려보낸다 — 비율은 누적으로 유지.
       let pointerMode = false;
-      let pmRaf = 0;
       let pmDx = 0;
       let pmDy = 0;
-      function flushPointerMove() {
-        pmRaf = 0;
-        if (pmDx || pmDy) {
-          kbSend(actions.pointerMove(pmDx, pmDy, false));
-          pmDx = 0;
-          pmDy = 0;
+      let pmPumping = false;
+      const PM_STEP = 12;
+      const PM_PUMP_MS = 45;
+      function pumpPointer() {
+        const dx = Math.round(pmDx);
+        const dy = Math.round(pmDy);
+        if (!dx && !dy) {
+          pmPumping = false;
+          return;
         }
+        const sx = dx > PM_STEP ? PM_STEP : dx < -PM_STEP ? -PM_STEP : dx;
+        const sy = dy > PM_STEP ? PM_STEP : dy < -PM_STEP ? -PM_STEP : dy;
+        pmDx -= sx;
+        pmDy -= sy;
+        log.push("pm", `pump ${sx},${sy}`);
+        kbSend(actions.pointerMove(sx, sy, false));
+        setTimeout(pumpPointer, PM_PUMP_MS);
       }
       const pmToggle = el("button", "lgtv-btn lgtv-pm-toggle");
       pmToggle.innerHTML = ico("pointer", 16);
       pmToggle.dataset.node = "pointer-toggle";
-      pmToggle.title = "마우스 포인터 모드(매직 리모컨)";
+      pmToggle.title = t("pm.title");
       pmToggle.onclick = safe(() => {
         pointerMode = !pointerMode;
         dpad.classList.toggle("lgtv-pm", pointerMode);
@@ -1436,9 +1463,16 @@ export default {
       );
       dpad.addEventListener("mousemove", (e) => {
         if (!pointerMode) return;
-        pmDx += e.movementX;
-        pmDy += e.movementY;
-        if (!pmRaf) pmRaf = requestAnimationFrame(flushPointerMove);
+        // 트랙패드(16:9 네모)를 가로지르면 TV 화면(1920x1080)을 가로지르도록 비율 스케일.
+        const w = dpad.offsetWidth || 264;
+        const h = dpad.offsetHeight || 148;
+        pmDx += (e.movementX * 1920) / w;
+        pmDy += (e.movementY * 1080) / h;
+        log.push("pm", `mv ${e.movementX},${e.movementY}`);
+        if (!pmPumping) {
+          pmPumping = true;
+          pumpPointer();
+        }
       });
       dpad.addEventListener(
         "click",
@@ -1479,19 +1513,19 @@ export default {
 
       // 설정: IP / MAC 입력 + 자동탐색/연결
       ipIn = el("input", "lgtv-in");
-      ipIn.placeholder = "TV IP (예: 192.168.0.10)";
+      ipIn.placeholder = t("ip.placeholder");
       ipIn.dataset.node = "settings-ip";
       ipIn.oninput = safe(() => storage.write("tvIp", ipIn.value.trim()));
       macIn = el("input", "lgtv-in");
-      macIn.placeholder = "TV MAC (예: aa:bb:cc:dd:ee:ff)";
+      macIn.placeholder = t("mac.placeholder");
       macIn.dataset.node = "settings-mac";
       macIn.oninput = safe(() => storage.write("tvMac", macIn.value.trim()));
       const set = el("div", "lgtv-set");
       const setRow = el("div", "lgtv-setrow");
-      const scanBtn = el("button", "lgtv-tbtn", "TV 찾기");
+      const scanBtn = el("button", "lgtv-tbtn", t("btn.scan"));
       scanBtn.dataset.node = "scan";
       scanBtn.onclick = safe(() => autoFind().then(syncInputs));
-      const connBtn = el("button", "lgtv-tbtn acc", "연결");
+      const connBtn = el("button", "lgtv-tbtn acc", t("btn.connect"));
       connBtn.dataset.node = "connect";
       connBtn.onclick = safe(() => actions.connect());
       setRow.append(scanBtn, connBtn);
@@ -1503,9 +1537,9 @@ export default {
       const kb = el("div", "lgtv-kb");
       kb.tabIndex = 0;
       kb.dataset.node = "keyboard";
-      kb.innerHTML =
-        ico("input", 22) +
-        '<span class="lgtv-kb-t">리모컨 키 (클릭 후 ←↑↓→ · Enter · [ ] 볼륨 · PgUp/Dn 채널)</span>';
+      kb.innerHTML = ico("input", 22);
+      const kbSpan = el("span", "lgtv-kb-t", t("kb.hint"));
+      kb.append(kbSpan);
       const kbSend = (p) => Promise.resolve(p).catch((e) => log.push("kb-err", e && e.message ? e.message : e));
       let muted = false; // m 토글(로컬) — TV 상태 쿼리 없이 번갈아 on/off
       let playing = true; // space 토글(로컬) — play ↔ pause
@@ -1567,6 +1601,20 @@ export default {
       syncInputs();
       updateDot();
       updateSearchState();
+
+      // 로케일 변경 시 뷰 내 문자열 갱신(로케일 의존 DOM 노드만 교체).
+      function updateTexts() {
+        minBtn.title = t("btn.minimize");
+        pmToggle.title = t("pm.title");
+        ipIn.placeholder = t("ip.placeholder");
+        macIn.placeholder = t("mac.placeholder");
+        scanBtn.textContent = t("btn.scan");
+        connBtn.textContent = t("btn.connect");
+        kbSpan.textContent = t("kb.hint");
+        registerHeader();
+        updateSearchState();
+      }
+      ctx.subscriptions.push(app.events.on("locale.changed", () => updateTexts()));
     }
 
     buildUi();
