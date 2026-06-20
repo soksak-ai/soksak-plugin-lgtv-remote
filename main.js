@@ -1429,6 +1429,9 @@ export default {
       let pmDx = 0;
       let pmDy = 0;
       let pmPumping = false;
+      // 절대 매핑용 추정 TV 커서 위치(1920x1080 기준). 마우스의 네모 내 위치를 이 절대 좌표로 보낸다.
+      let pmTvX = 960;
+      let pmTvY = 540;
       const PM_STEP = 12;
       const PM_PUMP_MS = 16;
       function pumpPointer() {
@@ -1474,11 +1477,16 @@ export default {
       head.insertBefore(pmToggle, minBtn);
       dpad.addEventListener("mousemove", (e) => {
         if (!pointerMode) return;
-        // 트랙패드(높이=원 188, 좌우 full 사각형)를 가로지르면 TV 화면을 가로지르도록 비율 스케일.
-        const w = dpad.offsetWidth || 264;
-        const h = dpad.offsetHeight || 188;
-        pmDx += (e.movementX * 1920) / w;
-        pmDy += (e.movementY * 1080) / h;
+        // 절대 매핑 — 마우스의 네모 내 위치(0~1)를 TV 화면 절대 위치(×1920x1080)로. 네모 구석 = TV 구석.
+        // move 는 상대뿐이라 추정 커서(pmTvX/Y)와의 차이를 보낸다. 펌프가 작은 스텝으로 흘려 부드럽게.
+        const r = dpad.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        const tx = Math.min(1920, Math.max(0, ((e.clientX - r.left) / r.width) * 1920));
+        const ty = Math.min(1080, Math.max(0, ((e.clientY - r.top) / r.height) * 1080));
+        pmDx += tx - pmTvX;
+        pmDy += ty - pmTvY;
+        pmTvX = tx;
+        pmTvY = ty;
         if (!pmPumping) {
           pmPumping = true;
           pumpPointer();
