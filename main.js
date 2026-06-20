@@ -1291,11 +1291,13 @@ export default {
 .lgtv-kb:focus{opacity:1;box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
 .lgtv-in.lgtv-ime-on{box-shadow:var(--neoin),inset 0 0 0 2px #3fb950}
 .lgtv-in.lgtv-ime-on::placeholder{color:#3fb950}
-.lgtv-pm-toggle{position:absolute;top:0;right:0;width:30px;height:30px;border-radius:50%;z-index:3}
-.lgtv-dpad{transition:height .15s,width .15s}
-.lgtv-dpad.lgtv-pm{width:100%;height:auto;aspect-ratio:16/9;cursor:crosshair;user-select:none;-webkit-user-select:none}
-.lgtv-dpad.lgtv-pm .lgtv-btn:not(.lgtv-pm-toggle){pointer-events:none;opacity:.2}
-.lgtv-dpad.lgtv-pm .lgtv-dpad-ring{border-radius:16px;box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
+.lgtv-pm-toggle{width:22px;height:22px;border-radius:50%;flex:0 0 auto;padding:0}
+.lgtv-dpad-inner{position:absolute;inset:0}
+.lgtv-dpad{transition:width .15s}
+.lgtv-dpad.lgtv-pm{width:100%;height:188px;cursor:crosshair;user-select:none;-webkit-user-select:none;
+  border-radius:18px;background:var(--surf);box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
+.lgtv-dpad.lgtv-pm .lgtv-dpad-inner{left:50%;width:188px;transform:translateX(-50%)}
+.lgtv-dpad.lgtv-pm .lgtv-dpad-inner .lgtv-btn{pointer-events:none;opacity:.2}
 .lgtv-kb-t{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.8}`;
       document.head.appendChild(s);
       return s;
@@ -1402,11 +1404,12 @@ export default {
       const htitle = el("span", "lgtv-htitle");
       htitle.innerHTML = ico("tv", 15) + "<span>LG TV</span>";
       dot = el("span", "lgtv-dot");
+      htitle.append(dot); // 연결 표시는 'LG TV' 제목 옆에 붙인다(헤더 우측 컨트롤과 분리).
       const minBtn = el("button", "lgtv-min", "—");
       minBtn.dataset.node = "minimize";
       minBtn.title = t("btn.minimize");
       minBtn.onclick = safe(async () => setVisible(false));
-      head.append(htitle, dot, minBtn);
+      head.append(htitle, minBtn);
 
       // 상단행: HOME / 전원 ON(초록) / OFF(빨강) / BACK
       const top = el("div", "lgtv-grid4");
@@ -1427,7 +1430,7 @@ export default {
       let pmDy = 0;
       let pmPumping = false;
       const PM_STEP = 12;
-      const PM_PUMP_MS = 45;
+      const PM_PUMP_MS = 16;
       function pumpPointer() {
         const dx = Math.round(pmDx);
         const dy = Math.round(pmDy);
@@ -1435,11 +1438,14 @@ export default {
           pmPumping = false;
           return;
         }
-        const sx = dx > PM_STEP ? PM_STEP : dx < -PM_STEP ? -PM_STEP : dx;
-        const sy = dy > PM_STEP ? PM_STEP : dy < -PM_STEP ? -PM_STEP : dy;
+        // 남은 거리에 비례한 스텝 — 작은 이동은 작게(부드럽게), 큰 이동은 크게(빠르게). webOS 가 받는
+        // 상한 PM_STEP 으로 제한(큰 점프는 무시됨). 16ms(≈60fps) 간격으로 흘려 끊김 없이 이동.
+        const mag = Math.max(Math.abs(dx), Math.abs(dy));
+        const step = Math.min(PM_STEP, Math.max(4, Math.ceil(mag / 4)));
+        const sx = dx > step ? step : dx < -step ? -step : dx;
+        const sy = dy > step ? step : dy < -step ? -step : dy;
         pmDx -= sx;
         pmDy -= sy;
-        log.push("pm", `pump ${sx},${sy}`);
         kbSend(actions.pointerMove(sx, sy, false));
         setTimeout(pumpPointer, PM_PUMP_MS);
       }
@@ -1452,23 +1458,27 @@ export default {
         dpad.classList.toggle("lgtv-pm", pointerMode);
         pmToggle.classList.toggle("lgtv-on", pointerMode);
       });
-      dpad.append(
+      // 내부 D-pad(ring+방향키+OK)는 별도 컨테이너로 묶어 중앙 188 에 고정 — 포인터 모드에서 네모가
+      // 좌우로 늘어나도 내부는 원형 그대로 유지(늘어나지 않게).
+      const dpadInner = el("div", "lgtv-dpad-inner");
+      dpadInner.append(
         el("div", "lgtv-dpad-ring"),
         node("dpad/up", ico("up"), () => actions.dpad("up"), "lgtv-du"),
         node("dpad/down", ico("down"), () => actions.dpad("down"), "lgtv-dd"),
         node("dpad/left", ico("left"), () => actions.dpad("left"), "lgtv-dl"),
         node("dpad/right", ico("right"), () => actions.dpad("right"), "lgtv-dr"),
         node("dpad/enter", "OK", () => actions.dpad("enter"), "lgtv-ok"),
-        pmToggle,
       );
+      dpad.append(dpadInner);
+      // 토글은 트랙패드(네모) 영역을 가리지 않도록 헤더 우측(최소화 버튼 앞)에 둔다.
+      head.insertBefore(pmToggle, minBtn);
       dpad.addEventListener("mousemove", (e) => {
         if (!pointerMode) return;
-        // 트랙패드(16:9 네모)를 가로지르면 TV 화면(1920x1080)을 가로지르도록 비율 스케일.
+        // 트랙패드(높이=원 188, 좌우 full 사각형)를 가로지르면 TV 화면을 가로지르도록 비율 스케일.
         const w = dpad.offsetWidth || 264;
-        const h = dpad.offsetHeight || 148;
+        const h = dpad.offsetHeight || 188;
         pmDx += (e.movementX * 1920) / w;
         pmDy += (e.movementY * 1080) / h;
-        log.push("pm", `mv ${e.movementX},${e.movementY}`);
         if (!pmPumping) {
           pmPumping = true;
           pumpPointer();
