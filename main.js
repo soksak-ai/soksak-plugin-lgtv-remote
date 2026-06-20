@@ -1577,8 +1577,11 @@ export default {
             return kbSend(actions.mute(muted));
         }
       }
+      // 한글 IME 상태면 e.key 가 "ㅗ"(h)·"ㅡ"(m) 등으로 바뀐다 → 물리 키 위치(e.code)로 매핑해
+      // IME/레이아웃과 무관하게. 방향키·PageUp 등 기능키는 e.code=e.key 라 그대로 통과한다.
+      const KB_CODE = { KeyH: "h", KeyM: "m", Space: " ", BracketLeft: "[", BracketRight: "]", Minus: "-", Equal: "=" };
       kb.onkeydown = (e) => {
-        const a = mapRemoteKey(e.key);
+        const a = mapRemoteKey(KB_CODE[e.code] || e.key);
         if (!a) return; // 미매핑(문자·Tab 등)은 기본 동작 유지
         e.preventDefault();
         dispatchRemoteKey(a);
