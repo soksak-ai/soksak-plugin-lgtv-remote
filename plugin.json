@@ -156,6 +156,11 @@
         "title": "WebSocket 진단"
       },
       {
+        "name": "ssap",
+        "title": "SSAP 진단 요청",
+        "danger": "inject"
+      },
+      {
         "name": "show",
         "title": "리모컨 열기"
       },
@@ -239,7 +244,11 @@
       },
       {
         "id": "keyboard",
-        "description": "키보드 입력 캡처 영역"
+        "description": "네비 단축키 입력 캡처(방향/볼륨/채널/재생/음소거/뒤로/HOME)"
+      },
+      {
+        "id": "search",
+        "description": "TV 검색/텍스트 입력 필드(IME)"
       }
     ]
   }

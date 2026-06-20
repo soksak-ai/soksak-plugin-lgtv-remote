@@ -7,6 +7,7 @@ import {
   bytesToHex,
   buildRegisterPayload,
   buildRequest,
+  buildSubscribe,
   parseRegistered,
   nextState,
   shouldReconnect,
@@ -62,6 +63,14 @@ test("buildRequest: type/id/uri + 선택 payload", () => {
   assert.deepEqual(a, { type: "request", id: "id-3", uri: "ssap://audio/volumeUp" });
   const b = buildRequest("ssap://audio/setVolume", { volume: 10 }, "id-4");
   assert.deepEqual(b.payload, { volume: 10 });
+});
+
+test("buildSubscribe: type subscribe + id + uri (webOS 구독 메시지)", () => {
+  assert.deepEqual(buildSubscribe("ssap://com.webos.service.ime/registerRemoteKeyboard", "id-9"), {
+    type: "subscribe",
+    id: "id-9",
+    uri: "ssap://com.webos.service.ime/registerRemoteKeyboard",
+  });
 });
 
 test("parseRegistered: registered 응답에서 client-key 추출(객체/문자열)", () => {

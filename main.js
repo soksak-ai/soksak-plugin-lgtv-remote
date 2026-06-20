@@ -109,6 +109,12 @@ export function buildRequest(uri, payload, id) {
   return msg;
 }
 
+// 지속 구독 메시지(type:subscribe). registerRemoteKeyboard 등 webOS 구독 API 는 request 로 보내면
+// 500 을 반환하고 subscribe 로만 응답한다(실TV 검증). 응답은 이벤트마다 같은 id 로 반복해서 온다.
+export function buildSubscribe(uri, id) {
+  return { type: "subscribe", id, uri };
+}
+
 // registered 응답에서 client-key 추출(객체 또는 JSON 문자열). 아니면 null.
 export function parseRegistered(msg) {
   let m;
@@ -363,6 +369,20 @@ export class TvClient {
     });
   }
 
+  // 지속 구독 — onUpdate(payload, err) 가 이벤트마다 호출된다. request 와 달리 done 하지 않아
+  // pending 에 머문다. dispose() 로 해지(close 시에도 pending 전체가 정리됨).
+  subscribe(uri, onUpdate) {
+    const id = this.makeId();
+    this.pending.set(id, {
+      handle: (m) => {
+        if (m.type === "error") onUpdate(null, new Error(m.error || "subscribe error"));
+        else onUpdate(m.payload, null);
+      },
+    });
+    this.control.send(JSON.stringify(buildSubscribe(uri, id)));
+    return () => this.pending.delete(id);
+  }
+
   // register 는 response(페어링 프롬프트) 후 registered 가 올 수 있다 — registered 까지 대기(api.go).
   _registerOnce() {
     const id = this.makeId();
@@ -508,6 +528,37 @@ export default {
     });
 
     let client = null;
+    let imeFocused = false; // TV 입력 필드 포커스 여부(registerRemoteKeyboard 구독으로 추적)
+    let imeUnsub = null;
+    // IME 구독 — 연결되면 입력 포커스(currentWidget.focus)를 받아 검색칸 상태를 갱신한다. webOS 표준:
+    // insertText 는 입력 필드가 포커스됐을 때만 먹는다(실TV 검증). 유튜브 등 자체 OSK 앱은 focus 이벤트를
+    // 주지 않아 imeFocused=false 로 남고, 그게 곧 '직접입력 불가' 신호다.
+    function startImeWatch() {
+      if (!client || imeUnsub) return;
+      imeUnsub = client.subscribe("ssap://com.webos.service.ime/registerRemoteKeyboard", (payload, err) => {
+        if (err) {
+          imeFocused = false;
+          log.push("ime", "구독 오류: " + (err.message || err));
+        } else {
+          const cw = payload && payload.currentWidget;
+          imeFocused = !!(cw && cw.focus);
+          log.push("ime", "focus=" + imeFocused + (cw && cw.contentType ? " " + cw.contentType : ""));
+        }
+        updateSearchState();
+      });
+    }
+    function stopImeWatch() {
+      if (imeUnsub) {
+        try {
+          imeUnsub();
+        } catch {
+          /* noop */
+        }
+        imeUnsub = null;
+      }
+      imeFocused = false;
+      updateSearchState();
+    }
     function ensureClient() {
       if (client) return client;
       if (!app.ws) throw new Error('WebSocket capability 없음("network" 권한 필요)');
@@ -519,6 +570,8 @@ export default {
         onState: (s) => {
           log.push("state", s);
           updateDot();
+          if (s === "connected") startImeWatch();
+          else if (s === "disconnected") stopImeWatch();
         },
       });
       return client;
@@ -766,10 +819,16 @@ export default {
       description: "Read current TV connection state — connection status, IP address, MAC address, and pairing key presence. Use when user asks about TV connection state.",
       triggers: { ko: "TV 연결 상태 IP MAC 페어링 확인" },
       params: {},
-      returns: "{ state, ip, mac, paired }",
+      returns: "{ state, ip, mac, paired, imeFocused }",
       handler: wrap(async () => {
         const { ip, mac } = await getCfg();
-        return { state: client ? client.state : "disconnected", ip, mac, paired: !!(client && client.clientKey) };
+        return {
+          state: client ? client.state : "disconnected",
+          ip,
+          mac,
+          paired: !!(client && client.clientKey),
+          imeFocused,
+        };
       }),
     });
     reg("set-ip", {
@@ -1174,6 +1233,8 @@ export default {
   color:var(--fg,#e6e6e6);background:var(--surf);box-shadow:var(--neoin);border:1px solid var(--bd,#3a3f4b);
   opacity:.5;transition:opacity .2s,box-shadow .2s}
 .lgtv-kb:focus{opacity:1;box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
+.lgtv-in.lgtv-ime-on{box-shadow:var(--neoin),inset 0 0 0 2px #3fb950}
+.lgtv-in.lgtv-ime-on::placeholder{color:#3fb950}
 .lgtv-kb-t{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.8}`;
       document.head.appendChild(s);
       return s;
@@ -1184,9 +1245,18 @@ export default {
     let dot = null;
     let ipIn = null;
     let macIn = null;
+    let search = null;
 
     function updateDot() {
       if (dot) dot.classList.toggle("on", !!client && client.state === "connected");
+    }
+    // 검색칸 상태 — IME 포커스가 있으면 '입력 가능', 없으면 안내(자체 OSK 앱은 직접입력 불가).
+    function updateSearchState() {
+      if (!search) return;
+      search.classList.toggle("lgtv-ime-on", imeFocused);
+      search.placeholder = imeFocused
+        ? "입력 가능 — 타이핑하면 TV 입력창으로"
+        : "TV에서 입력창을 먼저 선택 (유튜브 등 앱은 직접입력 불가)";
     }
     async function syncInputs() {
       if (!ipIn || !macIn) return;
@@ -1381,8 +1451,7 @@ export default {
 
       // 검색/텍스트 입력칸 — 타이핑하면 TV 입력창 전체를 현재 값으로 미러(insertText replace).
       // 한글 조합은 compositionend 에 완성 문자열 반영. 삭제도 값 변화로 함께 반영. Enter=검색 실행.
-      const search = el("input", "lgtv-in");
-      search.placeholder = "TV 검색/텍스트 (여기 타이핑 → TV 입력창)";
+      search = el("input", "lgtv-in");
       search.dataset.node = "search";
       search.autocomplete = "off";
       search.autocapitalize = "off";
@@ -1414,6 +1483,7 @@ export default {
       registerHeader(); // 타이틀바 아이콘 등록(헤더 컨트롤 그룹 좌측)
       syncInputs();
       updateDot();
+      updateSearchState();
     }
 
     buildUi();
@@ -1422,6 +1492,7 @@ export default {
         ro?.disconnect();
         if (fitRaf) cancelAnimationFrame(fitRaf);
         stopKeepalive();
+        stopImeWatch();
         setOverlayGate(false);
         backdrop?.remove();
         document.getElementById("soksak-lgtv-style")?.remove();
