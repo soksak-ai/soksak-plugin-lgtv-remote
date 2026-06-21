@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "doctor": "soksak-plugin-doctor",
+    "prepublishOnly": "npm run doctor"
+  },
+  "devDependencies": {
+    "soksak-plugin-doctor": "github:soksak-ai/soksak-plugin-doctor"
   }
 }
