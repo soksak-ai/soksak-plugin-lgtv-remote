@@ -93,14 +93,16 @@
         "title": {
           "en": "Power Off",
           "ko": "전원 끄기(완전 종료)"
-        }
+        },
+        "danger": "destructive"
       },
       {
         "name": "screen-off",
         "title": {
           "en": "Screen Off",
           "ko": "화면 끄기"
-        }
+        },
+        "danger": "destructive"
       },
       {
         "name": "screen-on",
@@ -220,14 +222,16 @@
         "title": {
           "en": "Delete Text",
           "ko": "문자 삭제"
-        }
+        },
+        "danger": "inject"
       },
       {
         "name": "text-enter",
         "title": {
           "en": "Enter Key",
           "ko": "Enter 키"
-        }
+        },
+        "danger": "inject"
       },
       {
         "name": "toast",
