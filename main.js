@@ -1188,6 +1188,10 @@ export default {
         .then(fn)
         .catch((e) => log.push("ui-err", e && e.message ? e.message : e));
     };
+    // 타이틀바 버튼용 단색 아웃라인 TV(24 viewBox, stroke=currentColor) — 코어가 stroke-width 2,
+    // round caps 로 렌더해 사이드바/해/설정 아이콘과 같은 두께·룩. 모달 내부 ICON.tv(채움형)와 별개.
+    const HEADER_TV_ICON =
+      '<rect x="6.75" y="2.5" width="10.5" height="19" rx="2" /> <circle cx="12" cy="6" r="1" /> <circle cx="12" cy="13" r="2.3" />';
     // Material 아이콘 inline SVG(외부 폰트 0 — 원본 Material Symbols 충실 이식). 24dp path.
     const ICON = {
       home: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
@@ -1373,6 +1377,9 @@ export default {
     function registerHeader() {
       const d = app.ui.registerHeaderAction({
         id: "remote",
+        // 단색 아웃라인 TV(24 viewBox, currentColor stroke) — 코어가 다른 타이틀바 아이콘과
+        // 동일 기하로 렌더. label 은 icon 미지원 코어용 폴백.
+        icon: HEADER_TV_ICON,
         label: "📺",
         title: t("header.title"),
         active: isVisible(),
