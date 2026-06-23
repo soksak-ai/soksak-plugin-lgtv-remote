@@ -1271,6 +1271,13 @@ export default {
 .lgtv-dd{left:50%;transform:translateX(-50%);bottom:6px;width:58px;height:52px;border-radius:14px 14px 9999px 9999px}
 .lgtv-dl{top:50%;transform:translateY(-50%);left:6px;width:52px;height:58px;border-radius:9999px 14px 14px 9999px}
 .lgtv-dr{top:50%;transform:translateY(-50%);right:6px;width:52px;height:58px;border-radius:14px 9999px 9999px 14px}
+/* 방향키는 위치잡기 transform(translate) 을 쓴다 — :active 의 일반 scale 규칙이 그 translate 를 통째로
+   덮어쓰면 버튼이 제자리를 벗어나 "멀리서 눌리는" 모양이 된다. 각 방향키마다 translate+scale 을 합성해
+   제자리에서 작게만 눌리게 한다(OK 버튼과 동일 처리). */
+.lgtv-dpad .lgtv-du:active{transform:translateX(-50%) scale(.95)}
+.lgtv-dpad .lgtv-dd:active{transform:translateX(-50%) scale(.95)}
+.lgtv-dpad .lgtv-dl:active{transform:translateY(-50%) scale(.95)}
+.lgtv-dpad .lgtv-dr:active{transform:translateY(-50%) scale(.95)}
 .lgtv-ok{top:50%;left:50%;transform:translate(-50%,-50%);width:66px;height:66px;border-radius:50%;
   font-weight:800;font-size:15px;background:var(--acc,#4a8fe8);color:var(--bg,#0d1117)}
 .lgtv-ok:active{transform:translate(-50%,-50%) scale(.95)}
@@ -1302,7 +1309,8 @@ export default {
   border-radius:18px;background:var(--surf);box-shadow:var(--neoin),inset 0 0 0 2px var(--acc,#4a8fe8)}
 .lgtv-dpad.lgtv-pm .lgtv-dpad-inner{left:50%;width:188px;transform:translateX(-50%)}
 .lgtv-dpad.lgtv-pm .lgtv-dpad-inner .lgtv-btn{pointer-events:none;opacity:.2}
-.lgtv-kb-t{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.8}`;
+.lgtv-kb-t{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.8;
+  width:100%;text-align:center;padding:0 8px;box-sizing:border-box}`;
       document.head.appendChild(s);
       return s;
     }
