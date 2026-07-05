@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node --test",
     "doctor": "soksak-plugin-doctor",
-    "prepublishOnly": "npm run doctor"
+    "prepublishOnly": "npm run doctor",
+    "test-unit": "node --test"
   },
   "devDependencies": {
     "soksak-plugin-doctor": "github:soksak-ai/soksak-plugin-doctor"
