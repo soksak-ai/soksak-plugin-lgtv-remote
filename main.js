@@ -843,6 +843,7 @@ export default {
       triggers: { ko: "TV 연결 페어링 접속" },
       params: {},
       returns: "{ state }",
+      message: (d) => `TV에 연결했습니다 (${d.state}).`,
       handler: wrap(async () => ({ state: await actions.connect() })),
     });
     reg("disconnect", {
@@ -850,6 +851,7 @@ export default {
       triggers: { ko: "TV 연결 해제 끊기 접속 종료" },
       params: {},
       returns: "{ state }",
+      message: () => "TV 연결을 해제했습니다.",
       handler: wrap(() => ({ state: actions.disconnect() })),
     });
     reg("status", {
@@ -857,6 +859,7 @@ export default {
       triggers: { ko: "TV 연결 상태 IP MAC 페어링 확인" },
       params: {},
       returns: "{ state, ip, mac, paired, imeFocused }",
+      message: (d) => `연결 상태: ${d.state}.`,
       handler: wrap(async () => {
         const { ip, mac } = await getCfg();
         return {
@@ -873,6 +876,7 @@ export default {
       triggers: { ko: "TV IP 설정 주소 변경 입력" },
       params: { ip: { type: "string", description: "TV IP 주소", required: true } },
       returns: "{ ip }",
+      message: (d) => `TV IP를 ${d.ip}로 설정했습니다.`,
       handler: wrap(async (p) => {
         await storage.write("tvIp", String(p.ip).trim());
         syncInputs();
@@ -884,6 +888,7 @@ export default {
       triggers: { ko: "TV MAC 주소 설정 WoL 매직패킷" },
       params: { mac: { type: "string", description: "TV MAC 주소", required: true } },
       returns: "{ mac }",
+      message: (d) => `TV MAC을 ${d.mac}로 설정했습니다.`,
       handler: wrap(async (p) => {
         await storage.write("tvMac", String(p.mac).trim());
         syncInputs();
@@ -895,6 +900,7 @@ export default {
       triggers: { ko: "MAC 자동 감지 arp ping 스캔" },
       params: {},
       returns: "{ mac }",
+      message: (d) => `MAC 주소 ${d.mac}를 찾았습니다.`,
       handler: wrap(async () => ({ mac: await scanMac() })),
     });
     reg("discover", {
@@ -902,6 +908,7 @@ export default {
       triggers: { ko: "LG TV 네트워크 탐색 발견 검색 SSDP" },
       params: { timeoutMs: { type: "number", description: "탐색 시간(ms, 기본 4000)" } },
       returns: "{ tvs }",
+      message: (d) => `TV ${(d.tvs ?? []).length}대를 발견했습니다.`,
       handler: wrap(async (p) => ({ tvs: await discoverTvs(p.timeoutMs) })),
     });
     reg("find", {
@@ -909,6 +916,7 @@ export default {
       triggers: { ko: "TV 자동 찾기 발견 IP MAC 자동 설정" },
       params: {},
       returns: "{ ip, mac }",
+      message: (d) => `TV를 찾았습니다 (IP ${d.ip}).`,
       handler: wrap(async () => await autoFind()),
     });
 
@@ -917,6 +925,7 @@ export default {
       triggers: { ko: "TV 전원 켜기 켜 파워 온 WoL" },
       params: {},
       returns: "{ state }",
+      message: (d) => `TV 전원을 켰습니다 (${d.state}).`,
       handler: wrap(async () => {
         await actions.powerOn();
         return { state: client ? client.state : "disconnected" };
@@ -928,6 +937,7 @@ export default {
       params: {},
       returns: "{ ok }",
       danger: "destructive",
+      message: () => "TV 전원을 껐습니다.",
       handler: wrap(() => actions.powerOff()),
     });
     reg("screen-off", {
@@ -936,29 +946,31 @@ export default {
       params: {},
       returns: "{ ok }",
       danger: "destructive",
+      message: () => "화면을 껐습니다.",
       handler: wrap(() => actions.screenOff()),
     });
     reg("screen-on", {
       description: "Turn on the TV screen (wake from standby). Use when user asks to turn the screen back on without full power cycle.",
       triggers: { ko: "TV 화면 켜기 스탠바이 해제" },
-      params: {}, returns: "{ ok }", handler: wrap(() => actions.screenOn()),
+      params: {}, returns: "{ ok }", message: () => "화면을 켰습니다.", handler: wrap(() => actions.screenOn()),
     });
 
     reg("volume-up", {
       description: "Increase TV volume by one step. Use when user asks to turn volume up or raise the sound.",
       triggers: { ko: "볼륨 올리기 소리 크게 음량 증가" },
-      params: {}, returns: "{ ok }", handler: wrap(() => actions.volumeUp()),
+      params: {}, returns: "{ ok }", message: () => "볼륨을 올렸습니다.", handler: wrap(() => actions.volumeUp()),
     });
     reg("volume-down", {
       description: "Decrease TV volume by one step. Use when user asks to turn volume down or lower the sound.",
       triggers: { ko: "볼륨 줄이기 소리 작게 음량 감소" },
-      params: {}, returns: "{ ok }", handler: wrap(() => actions.volumeDown()),
+      params: {}, returns: "{ ok }", message: () => "볼륨을 내렸습니다.", handler: wrap(() => actions.volumeDown()),
     });
     reg("set-volume", {
       description: "Set TV volume to a specific level (0–100). Use when user gives an explicit volume number.",
       triggers: { ko: "볼륨 설정 음량 지정 몇으로" },
       params: { level: { type: "number", description: "0-100", required: true } },
       returns: "{ ok }",
+      message: () => "볼륨을 설정했습니다.",
       handler: wrap((p) => actions.setVolume(p.level)),
     });
     reg("mute", {
@@ -966,35 +978,38 @@ export default {
       triggers: { ko: "음소거 뮤트 소리 끄기 켜기" },
       params: { on: { type: "boolean", description: "true=음소거", required: true } },
       returns: "{ ok }",
+      message: () => "음소거를 전환했습니다.",
       handler: wrap((p) => actions.mute(p.on)),
     });
     reg("channel-up", {
       description: "Switch to the next TV channel. Use when user asks to go to the next channel or channel up.",
       triggers: { ko: "채널 올리기 다음 채널 증가" },
-      params: {}, returns: "{ ok }", handler: wrap(() => actions.channelUp()),
+      params: {}, returns: "{ ok }", message: () => "다음 채널로 이동했습니다.", handler: wrap(() => actions.channelUp()),
     });
     reg("channel-down", {
       description: "Switch to the previous TV channel. Use when user asks to go to the previous channel or channel down.",
       triggers: { ko: "채널 내리기 이전 채널 감소" },
-      params: {}, returns: "{ ok }", handler: wrap(() => actions.channelDown()),
+      params: {}, returns: "{ ok }", message: () => "이전 채널로 이동했습니다.", handler: wrap(() => actions.channelDown()),
     });
     reg("open-channel", {
       description: "Open a specific TV channel by channel ID or number. Use when user asks to go to a particular channel.",
       triggers: { ko: "채널 번호 이동 채널 선택 열기" },
       params: { number: { type: "string", description: "채널 id/번호", required: true } },
       returns: "{ ok }",
+      message: () => "채널을 이동했습니다.",
       handler: wrap((p) => actions.openChannel(p.number)),
     });
     reg("inputs", {
       description: "List available external inputs on the TV (HDMI, AV, etc.). Use when user asks which inputs the TV has.",
       triggers: { ko: "TV 외부 입력 목록 HDMI 소스 리스트" },
-      params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.inputs()),
+      params: {}, returns: "{ ok, ... }", message: () => "입력 목록을 가져왔습니다.", handler: wrap(() => actions.inputs()),
     });
     reg("switch-input", {
       description: "Switch the TV input source (e.g., to HDMI 1, HDMI 2). Use when user asks to change the TV input.",
       triggers: { ko: "입력 소스 전환 HDMI 변경 선택" },
       params: { id: { type: "string", description: "inputId", required: true } },
       returns: "{ ok }",
+      message: () => "입력을 전환했습니다.",
       handler: wrap((p) => actions.switchInput(p.id)),
     });
 
@@ -1003,6 +1018,7 @@ export default {
       triggers: { ko: "방향키 위 아래 왼쪽 오른쪽 확인 OK 네비게이션" },
       params: { dir: { type: "string", description: "방향", enum: ["up", "down", "left", "right", "enter"], required: true } },
       returns: "{ ok }",
+      message: () => "방향키를 눌렀습니다.",
       handler: wrap((p) => actions.dpad(p.dir)),
     });
     reg("button", {
@@ -1010,6 +1026,7 @@ export default {
       triggers: { ko: "리모컨 버튼 HOME 홈 BACK 뒤로 MENU 메뉴" },
       params: { name: { type: "string", description: "버튼 이름", required: true } },
       returns: "{ ok }",
+      message: () => "버튼을 눌렀습니다.",
       handler: wrap((p) => actions.button(p.name)),
     });
     reg("pointer-move", {
@@ -1021,6 +1038,7 @@ export default {
         down: { type: "boolean", description: "드래그(버튼 누른 채 이동)" },
       },
       returns: "{ ok }",
+      message: () => "포인터를 이동했습니다.",
       handler: wrap((p) => actions.pointerMove(p.dx, p.dy, p.down)),
     });
     reg("pointer-click", {
@@ -1028,6 +1046,7 @@ export default {
       triggers: { ko: "포인터 클릭 선택 매직리모컨" },
       params: {},
       returns: "{ ok }",
+      message: () => "포인터를 클릭했습니다.",
       handler: wrap(() => actions.pointerClick()),
     });
     reg("media", {
@@ -1035,6 +1054,7 @@ export default {
       triggers: { ko: "미디어 재생 일시정지 멈춤 빨리감기 되감기" },
       params: { action: { type: "string", description: "재생 제어", enum: ["play", "pause", "stop", "fastForward", "rewind"], required: true } },
       returns: "{ ok }",
+      message: () => "미디어를 제어했습니다.",
       handler: wrap((p) => actions.media(p.action)),
     });
     reg("text-input", {
@@ -1043,6 +1063,7 @@ export default {
       params: { text: { type: "string", description: "입력 텍스트", required: true }, replace: { type: "boolean", description: "기존 대체" } },
       returns: "{ ok }",
       danger: "inject",
+      message: () => "텍스트를 입력했습니다.",
       handler: wrap((p) => actions.textInput(p.text, p.replace)),
     });
     reg("text-delete", {
@@ -1051,42 +1072,46 @@ export default {
       params: { count: { type: "number", description: "삭제 개수", required: true } },
       returns: "{ ok }",
       danger: "inject",
+      message: () => "문자를 삭제했습니다.",
       handler: wrap((p) => actions.textDelete(p.count)),
     });
     reg("text-enter", {
       description: "Send Enter key to the TV input field (confirm search or form). Use when user asks to press Enter or submit text on the TV.",
       triggers: { ko: "TV 엔터 입력 확인 검색 실행" },
-      params: {}, returns: "{ ok }", danger: "inject", handler: wrap(() => actions.textEnter()),
+      params: {}, returns: "{ ok }", danger: "inject", message: () => "Enter 키를 보냈습니다.", handler: wrap(() => actions.textEnter()),
     });
     reg("toast", {
       description: "Show a toast notification on the TV screen. Use when user asks to display a message or notification on the TV.",
       triggers: { ko: "TV 토스트 알림 메시지 표시" },
       params: { message: { type: "string", description: "메시지", required: true } },
       returns: "{ ok }",
+      message: () => "토스트를 표시했습니다.",
       handler: wrap((p) => actions.toast(p.message)),
     });
     reg("apps", {
       description: "List installed apps on the LG TV. Use when user asks what apps are on the TV or wants to see the app list.",
       triggers: { ko: "TV 앱 목록 설치된 앱 리스트" },
-      params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.apps()),
+      params: {}, returns: "{ ok, ... }", message: () => "앱 목록을 가져왔습니다.", handler: wrap(() => actions.apps()),
     });
     reg("launch", {
       description: "Launch an app on the LG TV by app ID. Use when user asks to open or start a specific app on the TV.",
       triggers: { ko: "TV 앱 실행 열기 시작 앱 실행" },
       params: { id: { type: "string", description: "appId", required: true } },
       returns: "{ ok }",
+      message: () => "앱을 실행했습니다.",
       handler: wrap((p) => actions.launch(p.id)),
     });
     reg("foreground-app", {
       description: "Get the currently active (foreground) app on the LG TV. Use when user asks which app is currently open on the TV.",
       triggers: { ko: "TV 현재 앱 포그라운드 활성 앱 확인" },
-      params: {}, returns: "{ ok, ... }", handler: wrap(() => actions.foregroundApp()),
+      params: {}, returns: "{ ok, ... }", message: () => "현재 앱 정보를 가져왔습니다.", handler: wrap(() => actions.foregroundApp()),
     });
 
     reg("ws-probe", {
       description: "(Diagnostic) Test WebSocket register response from webview — verifies raw TV WebSocket connectivity without the core transport. Use for debugging connection issues.",
       params: { url: { type: "string", description: "ws://ip:3000 또는 wss://ip:3001", required: true } },
       returns: "{ opened, recv, sample, note }",
+      message: (d) => (d.opened ? `WebSocket 연결됨 (수신 ${d.recv}건).` : "WebSocket 연결에 실패했습니다."),
       handler: wrap(
         (p) =>
           new Promise((res) => {
@@ -1146,6 +1171,7 @@ export default {
       },
       returns: "{ ok, result }",
       danger: "inject",
+      message: () => "SSAP 요청을 보냈습니다.",
       handler: wrap(async (p) => ({ result: await req(p.uri, p.payload) })),
     });
     reg("dump-log", {
@@ -1153,27 +1179,28 @@ export default {
       triggers: { ko: "디버그 로그 덤프 통신 기록 확인" },
       params: { lines: { type: "number", description: "끝에서 N 줄(기본 50)" } },
       returns: "{ entries }",
+      message: (d) => `로그 ${(d.entries ?? []).length}줄을 덤프했습니다.`,
       handler: wrap((p) => ({ entries: log.tail(p.lines) })),
     });
     reg("show", {
       description: "Open the LG TV remote control panel UI. Use when user asks to show or open the TV remote.",
       triggers: { ko: "리모컨 열기 보이기 TV 패널" },
-      params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(true) })),
+      params: {}, returns: "{ visible }", message: () => "리모컨을 열었습니다.", handler: wrap(() => ({ visible: setVisible(true) })),
     });
     reg("hide", {
       description: "Close the LG TV remote control panel UI. Use when user asks to hide or close the TV remote.",
       triggers: { ko: "리모컨 닫기 숨기기 TV 패널 닫기" },
-      params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(false) })),
+      params: {}, returns: "{ visible }", message: () => "리모컨을 닫았습니다.", handler: wrap(() => ({ visible: setVisible(false) })),
     });
     reg("minimize", {
       description: "Minimize the LG TV remote panel to the header icon. Use when user asks to minimize the remote.",
       triggers: { ko: "리모컨 최소화 아이콘 축소" },
-      params: {}, returns: "{ minimized }", handler: wrap(() => ({ minimized: !setVisible(false) })),
+      params: {}, returns: "{ minimized }", message: () => "리모컨을 최소화했습니다.", handler: wrap(() => ({ minimized: !setVisible(false) })),
     });
     reg("toggle", {
       description: "Toggle the LG TV remote panel open or closed. Use when user asks to toggle or switch the remote visibility.",
       triggers: { ko: "리모컨 토글 열기 닫기 전환" },
-      params: {}, returns: "{ visible }", handler: wrap(() => ({ visible: setVisible(!isVisible()) })),
+      params: {}, returns: "{ visible }", message: (d) => (d.visible ? "리모컨을 열었습니다." : "리모컨을 닫았습니다."), handler: wrap(() => ({ visible: setVisible(!isVisible()) })),
     });
 
     // ── 모달 UI(overlay:screen) ───────────────────────────────────────────────
