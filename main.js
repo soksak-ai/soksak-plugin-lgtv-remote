@@ -844,6 +844,13 @@ export default {
       params: {},
       returns: "{ state }",
       message: (d) => `TV에 연결했습니다 (${d.state}).`,
+      hint: (d) =>
+        d.state === "connected"
+          ? [
+              { cmd: "status", why: "연결 상태를 확인할 수 있습니다." },
+              { cmd: "dpad", why: "방향키로 TV UI를 조작할 수 있습니다." },
+            ]
+          : [],
       handler: wrap(async () => ({ state: await actions.connect() })),
     });
     reg("disconnect", {
@@ -877,6 +884,7 @@ export default {
       params: { ip: { type: "string", description: "TV IP 주소", required: true } },
       returns: "{ ip }",
       message: (d) => `TV IP를 ${d.ip}로 설정했습니다.`,
+      hint: () => [{ cmd: "connect", why: "설정한 IP로 TV에 연결할 수 있습니다." }],
       handler: wrap(async (p) => {
         await storage.write("tvIp", String(p.ip).trim());
         syncInputs();
@@ -889,6 +897,7 @@ export default {
       params: { mac: { type: "string", description: "TV MAC 주소", required: true } },
       returns: "{ mac }",
       message: (d) => `TV MAC을 ${d.mac}로 설정했습니다.`,
+      hint: () => [{ cmd: "power-on", why: "Wake-on-LAN으로 TV 전원을 켤 수 있습니다." }],
       handler: wrap(async (p) => {
         await storage.write("tvMac", String(p.mac).trim());
         syncInputs();
@@ -901,6 +910,7 @@ export default {
       params: {},
       returns: "{ mac }",
       message: (d) => `MAC 주소 ${d.mac}를 찾았습니다.`,
+      hint: (d) => (d.mac ? [{ cmd: "connect", why: "IP와 MAC이 모두 준비됐으니 연결할 수 있습니다." }] : []),
       handler: wrap(async () => ({ mac: await scanMac() })),
     });
     reg("discover", {
@@ -909,6 +919,8 @@ export default {
       params: { timeoutMs: { type: "number", description: "탐색 시간(ms, 기본 4000)" } },
       returns: "{ tvs }",
       message: (d) => `TV ${(d.tvs ?? []).length}대를 발견했습니다.`,
+      hint: (d) =>
+        d.tvs && d.tvs.length ? [{ cmd: "set-ip", why: "발견된 IP 중 하나를 TV IP로 저장할 수 있습니다." }] : [],
       handler: wrap(async (p) => ({ tvs: await discoverTvs(p.timeoutMs) })),
     });
     reg("find", {
@@ -917,6 +929,7 @@ export default {
       params: {},
       returns: "{ ip, mac }",
       message: (d) => `TV를 찾았습니다 (IP ${d.ip}).`,
+      hint: (d) => (d.ip ? [{ cmd: "connect", why: "찾은 TV에 연결할 수 있습니다." }] : []),
       handler: wrap(async () => await autoFind()),
     });
 
@@ -926,6 +939,7 @@ export default {
       params: {},
       returns: "{ state }",
       message: (d) => `TV 전원을 켰습니다 (${d.state}).`,
+      hint: (d) => (d.state === "connected" ? [{ cmd: "status", why: "연결 상태를 확인할 수 있습니다." }] : []),
       handler: wrap(async () => {
         await actions.powerOn();
         return { state: client ? client.state : "disconnected" };
@@ -1002,7 +1016,11 @@ export default {
     reg("inputs", {
       description: "List available external inputs on the TV (HDMI, AV, etc.). Use when user asks which inputs the TV has.",
       triggers: { ko: "TV 외부 입력 목록 HDMI 소스 리스트" },
-      params: {}, returns: "{ ok, ... }", message: () => "입력 목록을 가져왔습니다.", handler: wrap(() => actions.inputs()),
+      params: {},
+      returns: "{ ok, ... }",
+      message: () => "입력 목록을 가져왔습니다.",
+      hint: (d) => (d.ok ? [{ cmd: "switch-input", why: "목록에서 원하는 입력으로 전환할 수 있습니다." }] : []),
+      handler: wrap(() => actions.inputs()),
     });
     reg("switch-input", {
       description: "Switch the TV input source (e.g., to HDMI 1, HDMI 2). Use when user asks to change the TV input.",
@@ -1091,7 +1109,11 @@ export default {
     reg("apps", {
       description: "List installed apps on the LG TV. Use when user asks what apps are on the TV or wants to see the app list.",
       triggers: { ko: "TV 앱 목록 설치된 앱 리스트" },
-      params: {}, returns: "{ ok, ... }", message: () => "앱 목록을 가져왔습니다.", handler: wrap(() => actions.apps()),
+      params: {},
+      returns: "{ ok, ... }",
+      message: () => "앱 목록을 가져왔습니다.",
+      hint: (d) => (d.ok ? [{ cmd: "launch", why: "목록에서 원하는 앱을 실행할 수 있습니다." }] : []),
+      handler: wrap(() => actions.apps()),
     });
     reg("launch", {
       description: "Launch an app on the LG TV by app ID. Use when user asks to open or start a specific app on the TV.",
