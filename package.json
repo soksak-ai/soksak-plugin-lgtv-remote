@@ -10,5 +10,12 @@
   },
   "devDependencies": {
     "soksak-plugin-doctor": "github:soksak-ai/soksak-plugin-doctor"
+  },
+  "version": "0.0.1",
+  "soksakRelease": {
+    "kind": "plugin",
+    "id": "soksak-plugin-lgtv-remote",
+    "repository": "https://github.com/soksak-ai/soksak-plugin-lgtv-remote",
+    "manifest": "release.json"
   }
 }

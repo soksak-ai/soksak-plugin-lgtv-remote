@@ -2,14 +2,13 @@
   "spec": "soksak-spec-plugin@0.0.1",
   "id": "soksak-plugin-lgtv-remote",
   "name": {
-    "ko": "LG TV 리모컨",
+    "ko": "LG TV \ub9ac\ubaa8\ucee8",
     "en": "LG TV Remote"
   },
   "version": "0.0.1",
-  "repo": "https://github.com/soksak-ai/soksak-plugin-lgtv-remote.git",
   "description": {
-    "en": "LG webOS TV remote — control power/volume/channel/d-pad/input/media/keyboard via modal overlay and CLI/MCP commands. Direct SSAP WebSocket connection + Wake-on-LAN (net.udp.send).",
-    "ko": "LG webOS TV 리모컨 — 전원/볼륨/채널/방향키/입력/미디어/키보드를 모달 오버레이와 CLI/MCP 명령으로 조작한다. SSAP WebSocket 직결 + Wake-on-LAN(net.udp.send)."
+    "en": "LG webOS TV remote \u2014 control power/volume/channel/d-pad/input/media/keyboard via modal overlay and CLI/MCP commands. Direct SSAP WebSocket connection + Wake-on-LAN (net.udp.send).",
+    "ko": "LG webOS TV \ub9ac\ubaa8\ucee8 \u2014 \uc804\uc6d0/\ubcfc\ub968/\ucc44\ub110/\ubc29\ud5a5\ud0a4/\uc785\ub825/\ubbf8\ub514\uc5b4/\ud0a4\ubcf4\ub4dc\ub97c \ubaa8\ub2ec \uc624\ubc84\ub808\uc774\uc640 CLI/MCP \uba85\ub839\uc73c\ub85c \uc870\uc791\ud55c\ub2e4. SSAP WebSocket \uc9c1\uacb0 + Wake-on-LAN(net.udp.send)."
   },
   "entry": "main.js",
   "permissions": [
@@ -29,70 +28,70 @@
         "name": "connect",
         "title": {
           "en": "Connect TV",
-          "ko": "TV 연결"
+          "ko": "TV \uc5f0\uacb0"
         }
       },
       {
         "name": "disconnect",
         "title": {
           "en": "Disconnect TV",
-          "ko": "TV 연결 해제"
+          "ko": "TV \uc5f0\uacb0 \ud574\uc81c"
         }
       },
       {
         "name": "status",
         "title": {
           "en": "Connection Status",
-          "ko": "연결 상태"
+          "ko": "\uc5f0\uacb0 \uc0c1\ud0dc"
         }
       },
       {
         "name": "set-ip",
         "title": {
           "en": "Set TV IP",
-          "ko": "TV IP 설정"
+          "ko": "TV IP \uc124\uc815"
         }
       },
       {
         "name": "set-mac",
         "title": {
           "en": "Set TV MAC",
-          "ko": "TV MAC 설정"
+          "ko": "TV MAC \uc124\uc815"
         }
       },
       {
         "name": "scan-mac",
         "title": {
           "en": "Scan MAC",
-          "ko": "MAC 자동 탐색"
+          "ko": "MAC \uc790\ub3d9 \ud0d0\uc0c9"
         }
       },
       {
         "name": "discover",
         "title": {
           "en": "Discover TV",
-          "ko": "TV 자동 발견"
+          "ko": "TV \uc790\ub3d9 \ubc1c\uacac"
         }
       },
       {
         "name": "find",
         "title": {
           "en": "Find TV (IP/MAC)",
-          "ko": "TV 찾기(IP/MAC 설정)"
+          "ko": "TV \ucc3e\uae30(IP/MAC \uc124\uc815)"
         }
       },
       {
         "name": "power-on",
         "title": {
           "en": "Power On",
-          "ko": "전원 켜기"
+          "ko": "\uc804\uc6d0 \ucf1c\uae30"
         }
       },
       {
         "name": "power-off",
         "title": {
           "en": "Power Off",
-          "ko": "전원 끄기(완전 종료)"
+          "ko": "\uc804\uc6d0 \ub044\uae30(\uc644\uc804 \uc885\ub8cc)"
         },
         "danger": "destructive"
       },
@@ -100,7 +99,7 @@
         "name": "screen-off",
         "title": {
           "en": "Screen Off",
-          "ko": "화면 끄기"
+          "ko": "\ud654\uba74 \ub044\uae30"
         },
         "danger": "destructive"
       },
@@ -108,112 +107,112 @@
         "name": "screen-on",
         "title": {
           "en": "Screen On",
-          "ko": "화면 켜기"
+          "ko": "\ud654\uba74 \ucf1c\uae30"
         }
       },
       {
         "name": "volume-up",
         "title": {
           "en": "Volume +",
-          "ko": "볼륨 +"
+          "ko": "\ubcfc\ub968 +"
         }
       },
       {
         "name": "volume-down",
         "title": {
           "en": "Volume -",
-          "ko": "볼륨 -"
+          "ko": "\ubcfc\ub968 -"
         }
       },
       {
         "name": "set-volume",
         "title": {
           "en": "Set Volume",
-          "ko": "볼륨 설정"
+          "ko": "\ubcfc\ub968 \uc124\uc815"
         }
       },
       {
         "name": "mute",
         "title": {
           "en": "Mute",
-          "ko": "음소거"
+          "ko": "\uc74c\uc18c\uac70"
         }
       },
       {
         "name": "channel-up",
         "title": {
           "en": "Channel +",
-          "ko": "채널 +"
+          "ko": "\ucc44\ub110 +"
         }
       },
       {
         "name": "channel-down",
         "title": {
           "en": "Channel -",
-          "ko": "채널 -"
+          "ko": "\ucc44\ub110 -"
         }
       },
       {
         "name": "open-channel",
         "title": {
           "en": "Go to Channel",
-          "ko": "채널 이동"
+          "ko": "\ucc44\ub110 \uc774\ub3d9"
         }
       },
       {
         "name": "inputs",
         "title": {
           "en": "Input List",
-          "ko": "입력 목록"
+          "ko": "\uc785\ub825 \ubaa9\ub85d"
         }
       },
       {
         "name": "switch-input",
         "title": {
           "en": "Switch Input",
-          "ko": "입력 전환"
+          "ko": "\uc785\ub825 \uc804\ud658"
         }
       },
       {
         "name": "dpad",
         "title": {
           "en": "D-Pad / OK",
-          "ko": "방향키/OK"
+          "ko": "\ubc29\ud5a5\ud0a4/OK"
         }
       },
       {
         "name": "button",
         "title": {
           "en": "Remote Button",
-          "ko": "리모컨 버튼"
+          "ko": "\ub9ac\ubaa8\ucee8 \ubc84\ud2bc"
         }
       },
       {
         "name": "pointer-move",
         "title": {
           "en": "Move Pointer",
-          "ko": "포인터 이동(마우스 네비)"
+          "ko": "\ud3ec\uc778\ud130 \uc774\ub3d9(\ub9c8\uc6b0\uc2a4 \ub124\ube44)"
         }
       },
       {
         "name": "pointer-click",
         "title": {
           "en": "Pointer Click",
-          "ko": "포인터 클릭"
+          "ko": "\ud3ec\uc778\ud130 \ud074\ub9ad"
         }
       },
       {
         "name": "media",
         "title": {
           "en": "Media Control",
-          "ko": "미디어 제어"
+          "ko": "\ubbf8\ub514\uc5b4 \uc81c\uc5b4"
         }
       },
       {
         "name": "text-input",
         "title": {
           "en": "Text Input",
-          "ko": "텍스트 입력"
+          "ko": "\ud14d\uc2a4\ud2b8 \uc785\ub825"
         },
         "danger": "inject"
       },
@@ -221,7 +220,7 @@
         "name": "text-delete",
         "title": {
           "en": "Delete Text",
-          "ko": "문자 삭제"
+          "ko": "\ubb38\uc790 \uc0ad\uc81c"
         },
         "danger": "inject"
       },
@@ -229,7 +228,7 @@
         "name": "text-enter",
         "title": {
           "en": "Enter Key",
-          "ko": "Enter 키"
+          "ko": "Enter \ud0a4"
         },
         "danger": "inject"
       },
@@ -237,49 +236,49 @@
         "name": "toast",
         "title": {
           "en": "Show Toast",
-          "ko": "토스트 표시"
+          "ko": "\ud1a0\uc2a4\ud2b8 \ud45c\uc2dc"
         }
       },
       {
         "name": "apps",
         "title": {
           "en": "App List",
-          "ko": "앱 목록"
+          "ko": "\uc571 \ubaa9\ub85d"
         }
       },
       {
         "name": "launch",
         "title": {
           "en": "Launch App",
-          "ko": "앱 실행"
+          "ko": "\uc571 \uc2e4\ud589"
         }
       },
       {
         "name": "foreground-app",
         "title": {
           "en": "Foreground App",
-          "ko": "현재 앱"
+          "ko": "\ud604\uc7ac \uc571"
         }
       },
       {
         "name": "dump-log",
         "title": {
           "en": "Dump Debug Log",
-          "ko": "디버그 로그 덤프"
+          "ko": "\ub514\ubc84\uadf8 \ub85c\uadf8 \ub364\ud504"
         }
       },
       {
         "name": "ws-probe",
         "title": {
           "en": "WebSocket Probe",
-          "ko": "WebSocket 진단"
+          "ko": "WebSocket \uc9c4\ub2e8"
         }
       },
       {
         "name": "ssap",
         "title": {
           "en": "SSAP Probe",
-          "ko": "SSAP 진단 요청"
+          "ko": "SSAP \uc9c4\ub2e8 \uc694\uccad"
         },
         "danger": "inject"
       },
@@ -287,107 +286,107 @@
         "name": "show",
         "title": {
           "en": "Open Remote",
-          "ko": "리모컨 열기"
+          "ko": "\ub9ac\ubaa8\ucee8 \uc5f4\uae30"
         }
       },
       {
         "name": "hide",
         "title": {
           "en": "Close Remote",
-          "ko": "리모컨 닫기"
+          "ko": "\ub9ac\ubaa8\ucee8 \ub2eb\uae30"
         }
       },
       {
         "name": "toggle",
         "title": {
           "en": "Toggle Remote",
-          "ko": "리모컨 토글"
+          "ko": "\ub9ac\ubaa8\ucee8 \ud1a0\uae00"
         }
       },
       {
         "name": "minimize",
         "title": {
           "en": "Minimize Remote",
-          "ko": "리모컨 최소화"
+          "ko": "\ub9ac\ubaa8\ucee8 \ucd5c\uc18c\ud654"
         }
       }
     ],
     "nodes": [
       {
         "id": "power-on",
-        "description": "전원 켜기 버튼"
+        "description": "\uc804\uc6d0 \ucf1c\uae30 \ubc84\ud2bc"
       },
       {
         "id": "power-off",
-        "description": "전원 끄기 버튼"
+        "description": "\uc804\uc6d0 \ub044\uae30 \ubc84\ud2bc"
       },
       {
         "id": "minimize",
-        "description": "최소화 버튼"
+        "description": "\ucd5c\uc18c\ud654 \ubc84\ud2bc"
       },
       {
         "id": "input",
-        "description": "입력 소스 버튼"
+        "description": "\uc785\ub825 \uc18c\uc2a4 \ubc84\ud2bc"
       },
       {
         "id": "vol-up",
-        "description": "볼륨 + 버튼"
+        "description": "\ubcfc\ub968 + \ubc84\ud2bc"
       },
       {
         "id": "vol-down",
-        "description": "볼륨 - 버튼"
+        "description": "\ubcfc\ub968 - \ubc84\ud2bc"
       },
       {
         "id": "mute",
-        "description": "음소거 버튼"
+        "description": "\uc74c\uc18c\uac70 \ubc84\ud2bc"
       },
       {
         "id": "ch-up",
-        "description": "채널 + 버튼"
+        "description": "\ucc44\ub110 + \ubc84\ud2bc"
       },
       {
         "id": "ch-down",
-        "description": "채널 - 버튼"
+        "description": "\ucc44\ub110 - \ubc84\ud2bc"
       },
       {
         "id": "dpad",
-        "description": "방향키/OK(키=up|down|left|right|enter)"
+        "description": "\ubc29\ud5a5\ud0a4/OK(\ud0a4=up|down|left|right|enter)"
       },
       {
         "id": "btn",
-        "description": "리모컨 버튼(키=home|back|menu)"
+        "description": "\ub9ac\ubaa8\ucee8 \ubc84\ud2bc(\ud0a4=home|back|menu)"
       },
       {
         "id": "media",
-        "description": "미디어 버튼(키=play|pause|stop)"
+        "description": "\ubbf8\ub514\uc5b4 \ubc84\ud2bc(\ud0a4=play|pause|stop)"
       },
       {
         "id": "settings-ip",
-        "description": "TV IP 입력 필드"
+        "description": "TV IP \uc785\ub825 \ud544\ub4dc"
       },
       {
         "id": "settings-mac",
-        "description": "TV MAC 입력 필드"
+        "description": "TV MAC \uc785\ub825 \ud544\ub4dc"
       },
       {
         "id": "scan",
-        "description": "MAC 자동 탐색 버튼"
+        "description": "MAC \uc790\ub3d9 \ud0d0\uc0c9 \ubc84\ud2bc"
       },
       {
         "id": "connect",
-        "description": "연결 버튼"
+        "description": "\uc5f0\uacb0 \ubc84\ud2bc"
       },
       {
         "id": "keyboard",
-        "description": "네비 단축키 입력 캡처(방향/볼륨/채널/재생/음소거/뒤로/HOME)"
+        "description": "\ub124\ube44 \ub2e8\ucd95\ud0a4 \uc785\ub825 \ucea1\ucc98(\ubc29\ud5a5/\ubcfc\ub968/\ucc44\ub110/\uc7ac\uc0dd/\uc74c\uc18c\uac70/\ub4a4\ub85c/HOME)"
       },
       {
         "id": "search",
-        "description": "TV 검색/텍스트 입력 필드(IME)"
+        "description": "TV \uac80\uc0c9/\ud14d\uc2a4\ud2b8 \uc785\ub825 \ud544\ub4dc(IME)"
       },
       {
         "id": "pointer-toggle",
-        "description": "마우스 포인터 모드 토글(D-pad 트랙패드)"
+        "description": "\ub9c8\uc6b0\uc2a4 \ud3ec\uc778\ud130 \ubaa8\ub4dc \ud1a0\uae00(D-pad \ud2b8\ub799\ud328\ub4dc)"
       }
     ]
   }
